@@ -82,7 +82,7 @@ public class OrderController {
     return ResponseEntity.ok(orders);
   }
 
-  @GetMapping("/{id}")
+  @GetMapping("/{id:\\d+}")
   public ResponseEntity<OrderResponseDTO> getOrder(@PathVariable Long id) {
     Order order = orderService.findById(id);
     if (isForbiddenForLogistics(order.getCity()) || isForbiddenForDriver(order.getId())) {
@@ -91,7 +91,7 @@ public class OrderController {
     return ResponseEntity.ok(orderService.enrichOrderResponse(order));
   }
 
-  @PatchMapping("/{id}/status")
+  @PatchMapping("/{id:\\d+}/status")
   public ResponseEntity<?> updateStatus(
       @PathVariable Long id,
       @RequestParam OrderStatus status,
@@ -164,7 +164,7 @@ public class OrderController {
     return ResponseEntity.status(HttpStatus.CREATED).body(result);
   }
 
-  @DeleteMapping("/{id}")
+  @DeleteMapping("/{id:\\d+}")
   public ResponseEntity<?> deleteOrder(@PathVariable Long id) {
     try {
       Order existing = orderService.findById(id);

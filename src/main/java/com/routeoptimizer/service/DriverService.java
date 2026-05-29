@@ -49,7 +49,7 @@ public class DriverService {
     driver.setEmail(dto.getEmail());
     String rawPassword = dto.getPassword();
     if (rawPassword == null || rawPassword.isBlank()) {
-      throw new IllegalArgumentException("La contrasena del conductor es obligatoria");
+      throw new IllegalArgumentException("La contraseña del conductor es obligatoria");
     }
     driver.setPasswordHash(passwordEncoder.encode(rawPassword));
     driver.setName(dto.getName());
