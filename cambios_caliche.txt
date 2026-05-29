@@ -1,0 +1,2771 @@
+diff --git a/EC2_GUIDE.md b/docs/EC2_GUIDE.md
+similarity index 100%
+rename from EC2_GUIDE.md
+rename to docs/EC2_GUIDE.md
+diff --git a/docs/HOTFIX_MULTI_TENANT_REPORT_SYNC.md b/docs/HOTFIX_MULTI_TENANT_REPORT_SYNC.md
+deleted file mode 100644
+index 6d3dd83..0000000
+--- a/docs/HOTFIX_MULTI_TENANT_REPORT_SYNC.md
++++ /dev/null
+@@ -1,238 +0,0 @@
+-# Hotfix: Multi-Tenant Security and Report Synchronization
+-
+-Fecha: 2026-05-29
+-
+-## Alcance
+-
+-Este hotfix finaliza la conexión entre seguridad JWT, aislamiento por ciudad para usuarios `LOGISTICS`, generación segura de reportes y sincronización de filtros en frontend.
+-
+-Se trabajó principalmente sobre controladores Java y componentes React. Durante la verificación aparecieron dos errores de compilación en servicios ya modificados previamente; se corrigieron de forma mínima para dejar el backend compilando.
+-
+-## Objetivos Cubiertos
+-
+-- Forzar aislamiento por ciudad para usuarios `LOGISTICS`.
+-- Evitar acceso cross-city por parámetros manipulados desde frontend.
+-- Retornar `403 Forbidden` sin filtrar datos cuando un usuario `LOGISTICS` intenta acceder a otra ciudad.
+-- Sincronizar filtros activos en exportación Excel.
+-- Enviar ciudad activa al generar PDF desde el centro de despacho.
+-- Agregar reset de filtros sin recargar la página.
+-- Confirmar compilación backend y build frontend.
+-
+-## Archivos Modificados
+-
+-### Backend - Controladores
+-
+-- `AnalyticsController.java`
+-- `DriverController.java`
+-- `BatchController.java`
+-- `OrderController.java`
+-- `ReportController.java`
+-
+-### Backend - Correcciones de Compilación
+-
+-- `ReportService.java`
+-- `SmartDispatchService.java`
+-
+-Estas correcciones fueron puntuales:
+-
+-- Se renombró una variable local duplicada `auth` a `reportAuth`.
+-- Se actualizó `driverService.getFleetStatus()` para pasar el filtro de ciudad requerido.
+-
+-### Frontend
+-
+-- `OrdersManagementModule.tsx`
+-- `LogisticsDispatchCenter.tsx`
+-
+-## Cambios de Seguridad
+-
+-### Extracción de Usuario Autenticado
+-
+-En los controladores se agregó lectura del usuario autenticado desde `SecurityContextHolder`.
+-
+-El flujo usado es:
+-
+-```java
+-var auth = SecurityContextHolder.getContext().getAuthentication();
+-return auth != null && auth.getPrincipal() instanceof User user ? user : null;
+-```
+-
+-Con esto se obtiene:
+-
+-- Rol del usuario.
+-- Ciudad asignada.
+-- Identidad autenticada disponible en el contexto JWT.
+-
+-### Aislamiento Para LOGISTICS
+-
+-Si el usuario autenticado tiene rol `LOGISTICS`, el backend fuerza `user.getAssignedCity()` como ciudad efectiva.
+-
+-Esto evita que el frontend pueda manipular parámetros como:
+-
+-- `?city=Bogotá`
+-- `/city/Medellín`
+-- exportaciones con ciudad no asignada.
+-
+-### Respuestas 403
+-
+-Se agregó rechazo explícito para accesos cross-city en:
+-
+-- Consulta de driver por ID.
+-- Cambio de estado de driver.
+-- Actualización de ubicación de driver.
+-- Asignación de driver a batch.
+-- Consulta de batch por ID.
+-- Optimización de batch.
+-- Actualización de manifiesto.
+-- Smart dispatch.
+-- Consulta de órdenes por ID.
+-- Cambio de estado de órdenes.
+-- Eliminación de órdenes.
+-- `/orders/city/{city}`.
+-- `/orders/city/{city}/count`.
+-- Exportaciones de reportes con ciudad manipulada.
+-
+-La respuesta aplicada es:
+-
+-```java
+-ResponseEntity.status(HttpStatus.FORBIDDEN).build();
+-```
+-
+-No se retorna body con detalles para evitar filtrado de información.
+-
+-## Cambios por Controlador
+-
+-### AnalyticsController
+-
+-- `delivery-summary` y `driver-ranking` usan ciudad efectiva.
+-- `financial-summary` ahora también fuerza ciudad para `LOGISTICS`.
+-
+-### DriverController
+-
+-- Listados usan filtro de ciudad efectivo.
+-- Operaciones por ID validan `assignedCity` del driver.
+-- Si el driver no pertenece a la ciudad asignada del usuario `LOGISTICS`, retorna `403`.
+-
+-### BatchController
+-
+-- Listados y pendientes usan ciudad efectiva.
+-- Accesos por ID validan ciudad del batch.
+-- Asignación de driver valida tanto ciudad del batch como ciudad del driver.
+-- Smart dispatch fuerza ciudad para usuarios `LOGISTICS`.
+-- Smart dispatch apply rechaza clusters cross-city.
+-
+-### OrderController
+-
+-- Listado general y pendientes usan ciudad efectiva.
+-- Consulta, actualización y eliminación por ID validan ciudad de la orden.
+-- Endpoints `/city/{city}` y `/city/{city}/count` retornan `403` en intento cross-city.
+-
+-### ReportController
+-
+-- Se validan solicitudes con ciudad explícita.
+-- Para `LOGISTICS`, una ciudad distinta a la asignada retorna `403`.
+-- Se preserva comportamiento global/admin.
+-- Exportaciones de Word/Excel reciben:
+-
+-```java
+-status
+-driver
+-search
+-```
+-
+-Estos filtros se reenvían a `ReportService`.
+-
+-## Cambios Frontend
+-
+-### OrdersManagementModule.tsx
+-
+-Se actualizó el reset de filtros:
+-
+-- Limpia búsqueda.
+-- Limpia estado.
+-- Limpia filtro de driver.
+-- Reinicia página actual.
+-- Limpia selección masiva.
+-- Recarga dataset por API sin refrescar la página.
+-
+-El botón usa la clase solicitada:
+-
+-```tsx
+-className="bg-slate-100 hover:bg-slate-200 text-slate-600 rounded-xl px-4 py-2 text-sm font-bold transition-all"
+-```
+-
+-La exportación Excel ya construye `URLSearchParams` dinámicamente y evita enviar filtros vacíos:
+-
+-- `city`
+-- `status`
+-- `driver`
+-- `search`
+-- timestamp anti-cache `t`
+-
+-### LogisticsDispatchCenter.tsx
+-
+-`generatePDF()` ahora envía la ciudad activa si existe:
+-
+-```ts
+-/reports/generate-global?city=<city>
+-```
+-
+-El backend sigue siendo la autoridad final. Para `LOGISTICS`, si la ciudad enviada no coincide con la asignada, el controlador responde `403`.
+-
+-## Verificación Ejecutada
+-
+-### Backend
+-
+-Comando:
+-
+-```powershell
+-mvn clean test -DskipTests
+-```
+-
+-Resultado:
+-
+-```text
+-BUILD SUCCESS
+-```
+-
+-### Frontend
+-
+-Comando:
+-
+-```powershell
+-npm run build
+-```
+-
+-Resultado:
+-
+-```text
+-built successfully
+-```
+-
+-Vite reportó únicamente warning de chunks grandes, no error de compilación.
+-
+-## Nota Sobre Errores del IDE
+-
+-Después de corregir los errores reales, IntelliJ mostró problemas stale como:
+-
+-- `SmartDispatchPlanDTO cannot be resolved`
+-- import no resuelto de `com.routeoptimizer.dto.SmartDispatchPlanDTO`
+-
+-Se verificó que:
+-
+-- `SmartDispatchPlanDTO.java` existe.
+-- El paquete declarado es correcto: `com.routeoptimizer.dto`.
+-- Maven compila limpio con `mvn clean test -DskipTests`.
+-
+-Por lo tanto, esos mensajes corresponden a caché/índice del IDE. Acción recomendada:
+-
+-- Reload All Maven Projects.
+-- Si persiste: `File > Invalidate Caches`.
+-
+-## Riesgos y Consideraciones
+-
+-- El hotfix fue intencionalmente quirúrgico; no se refactorizó arquitectura.
+-- Los servicios y repositorios ya estaban preparados y no se reescribieron.
+-- La capa backend queda como autoridad para ciudad, no el frontend.
+-- Algunos endpoints debug existentes no fueron eliminados porque estaban fuera del alcance funcional solicitado.
+-- El build backend y frontend pasan tras las correcciones.
+-
+diff --git a/docs/README.md b/docs/README.md
+new file mode 100644
+index 0000000..8329054
+--- /dev/null
++++ b/docs/README.md
+@@ -0,0 +1,12 @@
++# Documentación — Vibe Route
++
++Documentación técnica y de requisitos del proyecto.
++
++## Estructura
++
++- `requirements/` — Requerimientos funcionales y no funcionales.
++- `diagrams/` — Diagramas de arquitectura (C4, secuencia, etc.).
++- [`newmapscaliche.md`](./newmapscaliche.md) — **Release backend rama `mapa`:** seguridad, `/orders/mine`, PostGIS, WebSocket JWT y CORS Vite.
++- `GUIA_REMEDIACION_SEGURIDAD.md` — Remediaciones de seguridad (OWASP).
++- `CONTEXTO_TECNICO_MAYO_2026.md` — Contexto técnico y roles del sistema.
++- `EC2_GUIDE.md` — Despliegue en AWS EC2.
+diff --git a/docs/REPORTE_ESTABILIZACION_SPRINTS.md b/docs/REPORTE_ESTABILIZACION_SPRINTS.md
+deleted file mode 100644
+index 22f990b..0000000
+--- a/docs/REPORTE_ESTABILIZACION_SPRINTS.md
++++ /dev/null
+@@ -1,50 +0,0 @@
+-# 🚀 Reporte de Estabilización y Refactorización VibeRoute (Sprints 1-4)
+-
+-**Fecha:** 2026-05-13
+-**Propósito:** Este documento registra las modificaciones críticas de arquitectura y estabilización realizadas en el código heredado de la etapa anterior (código de Caliche). El objetivo táctico fue rescatar y estabilizar la conectividad y UX de la aplicación en entornos móviles reales, corrigiendo WebSockets, Mapas e Inteligencia Artificial sin alterar el esquema de base de datos ni romper las reglas de Clean Architecture.
+-
+----
+-
+-## 🎯 Contexto del Problema
+-Tras la integración de código previa, se detectaron fallos severos al correr la app en navegadores móviles reales:
+-1. **Fallo 5.1:** Los WebSockets no conectaban en móviles por bloqueos estrictos de CORS y pérdida de estado de sesión.
+-2. **Fallo 2.4:** Los marcadores del mapa (InfoWindows) estaban "muertos" y no mostraban la data del cliente.
+-3. **Fallo 2.2:** La pantalla de navegación no seguía al conductor (Auto-Pan roto) y las líneas de la ruta bloqueaban los toques de los dedos sobre la pantalla.
+-4. **Fallos 3.1, 3.2 y 3.3:** La IA Copiloto no emitía síntesis de voz debido a políticas Anti-Autoplay de los navegadores móviles, y sus hitos estaban desincronizados del estado real de la base de datos.
+-
+-Para remediar esto, se estructuró un plan intensivo de 4 Sprints:
+-
+----
+-
+-## 🛠️ Despliegue de Sprints
+-
+-### Sprint 1: Conectividad STOMP & Seguridad CORS
+-**Objetivo:** Permitir que los dispositivos móviles pasen el *preflight* CORS e inyecten exitosamente el JWT en la capa de STOMP.
+-*   **`SecurityConfig.java`**: Se eliminaron los orígenes (CORS) estáticos quemados en el código. Se implementó lectura dinámica a través de la variable de entorno `VIBEROUTE_CORS_ALLOWED` garantizando que los IPs locales en desarrollo funcionen (Ej: `http://192.168.1.X:3000`).
+-*   **`WebSocketConfig.java`**: Se construyó un `ChannelInterceptor` robusto. Este interceptor captura el frame `CONNECT` puro del protocolo STOMP, extrae la cabecera JWT, valida la firma con `JwtService` e inyecta la autenticación en el `SecurityContext` del túnel WebSocket.
+-*   **`useWebSocket.ts` (Frontend)**: Se actualizaron los `connectHeaders` de la librería `stompjs` para que el token JWT viaje incrustado desde el primer instante de handshake (Bear Token Inbound).
+-
+-### Sprint 2: Integridad de Datos en Mapa (Clean Data Transfer)
+-**Objetivo:** Reparar las chinchetas del mapa (`InfoWindow`) devolviendo datos del cliente sin violar la seguridad transaccional (evitar el `LazyInitializationException` provocado por Hibernate al intentar mandar el Batch entity completo).
+-*   **`BatchController.java`**: Se reescribió el endpoint `GET /batches/{id}`. En lugar de retornar la entidad JPA cruda, se implementó un mapeo iterativo mediante *Java Streams*.
+-*   **DTO Inline:** Se extraen del array interno de órdenes únicamente las variables necesarias (`id`, `address`, `clientName`, `clientReference`, `location`, `status`, `deliveryOrder`).
+-*   **Soporte de Fallbacks:** Se inyectó intencionalmente un campo `phone` vacío (`""`) como alias temporal para evitar romper el contrato con React, permitiendo que la heurística defensiva del frontend inyecte elegantemente un número por defecto ("Llamar al cliente") y evite crasheos de UI.
+-
+-### Sprint 3: Estabilidad UI Móvil, Z-Index y Auto-Pan Inteligente
+-**Objetivo:** Liberar el mapa para permitir "Navigación Libre" (panning) por el usuario, corregir bloqueos físicos en la pantalla táctil y garantizar un recentrado infalible.
+-*   **`MapsNavigationModule.tsx`**:
+-    *   **Desacople Reactivo:** El método `mapRef.current.panTo()` fue extirpado del interior del callback de geolocalización, para colocarlo en un `useEffect` Data-Driven enganchado al estado `driverPos`. Así el mapa responde velozmente sea por GPS real o inyecciones manuales.
+-    *   **Bypass de Hitboxes Táctiles:** Se repararon las enormes e intrusivas `google.maps.Polyline` manuales. Su Z-Index se redujo de `100` a `10` y se le inyectó el atributo clave `clickable: false`. Esto volvió a las rutas "invisibles" a nivel hardware, permitiendo que los toques de los conductores pasen a través de ellas y abran el InfoWindow.
+-    *   **Botón Flotante (FAB) de Recentrar:** Inyección dinámica (vía *Framer Motion*) de un botón en el rincón superior derecho. Solo nace cuando el usuario arrastra la pantalla (`isFollowing === false`). Un tap sobre él restaura de golpe el Auto-Pan al coche.
+-
+-### Sprint 4: Desbloqueo de Autoplay en IA Copiloto y Sincronización Reactiva
+-**Objetivo:** Evadir las fuertes normas Anti-Autoplay de Safari/Chrome Mobile, y resincronizar los hitos del viaje con el backend.
+-*   **`DriverCopilotBanner.tsx`**:
+-    *   **Técnica "Tap-To-Activate":** Al iniciar un lote, aparece un vibrante botón verde de *"Activar"*. Al ser pulsado, inyectamos furtivamente un objeto vacío (`SpeechSynthesisUtterance('')`) al motor del OS móvil. Esta treta desbloquea permanentemente el canal de audio sin que el usuario note ningún sonido de por medio.
+-    *   **Autoplay Reparado:** Se construyó un `useEffect` acoplado a un `useRef` (para evitar bucles de render en React) que se encarga de hablar genuinamente "manos libres".
+-    *   **Vinculación a Zustand:** Destruimos el viejo sistema de estado por `props` pasivas y enganchamos el motor de inteligencia artificial al Store Global (`useRouteStore(state => state.backupOrders)`). Ahora, el `Strategy Pattern` recalcula reactivamente: Cuando otra pantalla marca "Entregado", Zustand propaga el estado, el Copiloto lee que llegaste a la entrega 3 y en fracciones de segundo la IA te felicita de forma auditiva y automática.
+-
+----
+-
+-## 📌 Conclusión
+-Se logró restaurar la integridad del código frontend (React/Zustand) y backend (Spring/STOMP) unificando la seguridad y la experiencia móvil. No se tocaron ni modificaron tablas en la base de datos de PostgreSQL para prevenir catástrofes en despliegues existentes. El sistema se encuentra 100% estabilizado para producción.
+diff --git a/docs/newmapscaliche.md b/docs/newmapscaliche.md
+new file mode 100644
+index 0000000..9f06185
+--- /dev/null
++++ b/docs/newmapscaliche.md
+@@ -0,0 +1,322 @@
++# newmapscaliche — Cambios Backend (rama `mapa`)
++
++**Proyecto:** VibeRoute Colombia  
++**Ámbito:** Backend Spring Boot (`com.routeoptimizer`)  
++**Rama Git:** `mapa`  
++**Fecha de referencia:** Mayo 2026  
++**Relación:** Parche coordinado con hotfix de mapa móvil y seguridad del panel **DRIVER** en el frontend (`frontend_new`).
++
++---
++
++## 1. Resumen ejecutivo
++
++Este documento describe los cambios aplicados al backend para soportar:
++
++1. **Mapa y navegación del conductor** (datos geoespaciales correctos, pedidos acotados por repartidor).
++2. **Endurecimiento de seguridad** (CORS, WebSockets, contraseñas, exposición de datos).
++3. **Desarrollo local con Vite** (`localhost:5173`) junto a Docker (`:8080`, `:3000`).
++
++**No es un rediseño arquitectónico.** La estructura por capas (Controller → Service → Repository) se mantiene. El impacto se estima en **medio-bajo** (≈ 4–5/10): cambios focalizados, reversibles y alineados con principio de mínimo privilegio.
++
++---
++
++## 2. Objetivos del parche
++
++| Objetivo | Descripción |
++|----------|-------------|
++| Geolocalización fiable | Corregir consulta PostGIS para alertas de proximidad. |
++| Aislamiento DRIVER | El conductor solo consulta sus pedidos vía API dedicada. |
++| Seguridad operativa | BCrypt uniforme, WebSocket autenticado, CORS centralizado. |
++| DevEx | Permitir frontend Vite en puerto 5173 sin errores CORS. |
++| Estabilidad en despliegue | Evitar reseteo de contraseña del super admin en cada arranque. |
++
++---
++
++## 3. Archivos modificados o nuevos
++
++### 3.1 Archivos nuevos
++
++| Archivo | Responsabilidad |
++|---------|-----------------|
++| `src/main/java/com/routeoptimizer/security/WebSocketAuthChannelInterceptor.java` | Valida JWT en el frame STOMP `CONNECT` antes de permitir suscripciones. |
++
++### 3.2 Archivos modificados
++
++| Archivo | Tipo de cambio |
++|---------|----------------|
++| `config/SecurityConfig.java` | CORS ampliado (5173), comentario WebSocket, eliminación de `.cors()` duplicado. |
++| `config/WebSocketConfig.java` | Registro del interceptor inbound; orígenes WebSocket alineados con CORS HTTP. |
++| `config/UserSeeder.java` | Ya no sobrescribe `password_hash` del admin existente en cada startup. |
++| `controller/OrderController.java` | Nuevo `GET /orders/mine`; `GET /orders` prohibido para rol `DRIVER`. |
++| `controller/DriverController.java` | Eliminado `GET /drivers/debug-all`; removido `@CrossOrigin("*")`. |
++| `controller/AuthController.java` | Removido `@CrossOrigin("*")`. |
++| `controller/BatchController.java` | Removido `@CrossOrigin("*")`. |
++| `controller/SystemManagementController.java` | Removido `@CrossOrigin("*")`. |
++| `controller/RouteController.java` | Removido `@CrossOrigin("*")`. |
++| `controller/ReportController.java` | Removido `@CrossOrigin("*")`. |
++| `controller/LocationController.java` | Removido `@CrossOrigin("*")`. |
++| `controller/AnalyticsController.java` | Removido `@CrossOrigin("*")`. |
++| `controller/AIController.java` | Removido `@CrossOrigin("*")`. |
++| `repository/OrderRepository.java` | Fix PostGIS `findNearbyOrders`; nuevo `findByDriverId`. |
++| `service/OrderService.java` | Método `findByDriverId(Long driverId)`. |
++| `service/DriverService.java` | `PasswordEncoder` obligatorio al crear conductores. |
++
++---
++
++## 4. Cambios detallados
++
++### 4.1 PostGIS — `OrderRepository.findNearbyOrders`
++
++**Problema:** La query nativa usaba columnas `o.lat` / `o.lng`, inexistentes. La entidad `Order` usa `@Embedded Coordinate location` → columnas JPA: `location_lat`, `location_lng`.
++
++**Solución:** Query corregida con `location_lng`, `location_lat` y filtro `IS NOT NULL`.
++
++**Impacto:** `ProximityAlertService` y alertas WebSocket de colisión usan coordenadas reales.
++
++---
++
++### 4.2 API de pedidos por rol — `OrderController`
++
++#### Nuevo endpoint
++
++```
++GET /api/v1/orders/mine
++GET /orders/mine
++```
++
++| Requisito | Detalle |
++|-----------|---------|
++| Autenticación | JWT Bearer obligatorio |
++| Rol | Solo `DRIVER` |
++| Respuesta | `200` + lista `OrderResponseDTO` del conductor autenticado |
++| Lógica | `orderService.findByDriverId(user.getId())` — pedidos cuyo `batch` pertenece al `driver_id` |
++
++#### Cambio en listado global
++
++```
++GET /api/v1/orders
++```
++
++| Rol | Comportamiento |
++|-----|----------------|
++| `DRIVER` | **403 Forbidden** (cuerpo vacío) |
++| `LOGISTICS` | Lista filtrada por `assignedCity` del usuario |
++| `ADMIN` / `SUPER_ADMIN` | Lista completa o por query `?city=` |
++
++**Contrato para frontend:** El panel conductor debe usar **`/orders/mine`**, no `/orders`.
++
++---
++
++### 4.3 Repositorio — `findByDriverId`
++
++```java
++@Query("SELECT o FROM Order o JOIN Batch b ON o.batchId = b.id WHERE b.driver.id = :driverId")
++List<Order> findByDriverId(@Param("driverId") Long driverId);
++```
++
++Pedidos vinculados a lotes (`batches`) asignados al repartidor. Si el conductor no tiene lotes, la lista será vacía (comportamiento esperado).
++
++---
++
++### 4.4 Contraseñas de conductores — `DriverService`
++
++**Antes:** `setPasswordHash(dto.getPassword())` en texto plano o `"defaultHash"`.
++
++**Ahora:**
++
++- Inyección de `PasswordEncoder` (BCrypt).
++- Contraseña obligatoria; `IllegalArgumentException` si viene vacía.
++- Hash: `passwordEncoder.encode(rawPassword)`.
++
++Alineado con `AuthService.register` para rol `DRIVER`.
++
++---
++
++### 4.5 WebSockets — autenticación STOMP
++
++| Componente | Comportamiento |
++|------------|----------------|
++| Handshake HTTP `/ws-alertas/**` | Sigue en `permitAll()` (SockJS) |
++| Frame STOMP `CONNECT` | `WebSocketAuthChannelInterceptor` exige header `Authorization: Bearer <JWT>` |
++| Token inválido / ausente | `AccessDeniedException` — conexión rechazada |
++
++**Configuración en `WebSocketConfig`:**
++
++- `configureClientInboundChannel` registra el interceptor.
++- Orígenes permitidos: `localhost:3000`, `127.0.0.1:3000`, `localhost:5173`, `127.0.0.1:5173`.
++
++---
++
++### 4.6 CORS — `SecurityConfig`
++
++Orígenes HTTP permitidos (centralizado, sin `@CrossOrigin` por controlador):
++
++- `http://localhost:3000` — frontend Docker (nginx)
++- `http://127.0.0.1:3000`
++- `http://localhost:5173` — Vite dev server
++- `http://127.0.0.1:5173`
++
++Métodos: `GET`, `POST`, `PUT`, `PATCH`, `DELETE`, `OPTIONS`.  
++Headers: `Authorization`, `Content-Type`, etc.  
++`allowCredentials: true`.
++
++**Nota empresarial:** En producción conviene externalizar orígenes a variables de entorno (`CORS_ALLOWED_ORIGINS`).
++
++---
++
++### 4.7 UserSeeder — cuenta maestra
++
++**Antes:** En cada arranque se re-hasheaba y guardaba la contraseña del admin desde `ADMIN_PASSWORD`.
++
++**Ahora:**
++
++- Si el usuario existe: actualiza rol, nombre y ciudad; **no modifica** `password_hash`.
++- Si no existe: crea super admin con contraseña del `.env`.
++- Se eliminó log del email en consola.
++
++---
++
++### 4.8 Endpoints y superficie de ataque
++
++| Cambio | Motivo |
++|--------|--------|
++| Eliminado `GET /drivers/debug-all` | Fuga de datos de flota en producción |
++| Removido `@CrossOrigin(origins = "*")` en todos los controladores | CORS único y coherente en `SecurityConfig` |
++
++---
++
++## 5. Matriz de permisos (pedidos y mapa)
++
++| Endpoint | SUPER_ADMIN | ADMIN | LOGISTICS | DRIVER |
++|----------|:-----------:|:-----:|:---------:|:------:|
++| `GET /orders` | ✅ | ✅ | ✅ (ciudad) | ❌ 403 |
++| `GET /orders/mine` | ❌ 403 | ❌ 403 | ❌ 403 | ✅ |
++| `PATCH /orders/{id}/status` | ✅ | ✅ | ✅ | ✅ |
++| `GET /batches/**` | ✅ | ✅ | ✅ | ✅ |
++| `POST /batches/{id}/optimize` | ✅ | ✅ | ✅ | ✅* |
++| WebSocket CONNECT | ✅ con JWT | ✅ | ✅ | ✅ |
++
++\*Según asignación de lote y reglas de negocio existentes.
++
++---
++
++## 6. Integración con el frontend (rama `mapa`)
++
++| Pantalla | Endpoint backend esperado |
++|----------|---------------------------|
++| `DriverDashboardPage` — carga inicial | `GET /orders/mine` |
++| `OrdersManagementModule` (modo conductor) | `GET /orders/mine` |
++| `MapsNavigationModule` | `POST /batches/{id}/optimize`, store `backupOrders` sincronizado al entregar |
++| Login (Vite) | `POST /auth/login` desde origen `http://localhost:5173` |
++
++---
++
++## 7. Despliegue y Docker
++
++### Variables de entorno relevantes (`.env` raíz)
++
++```env
++ADMIN_EMAIL=admin@viberoute.com
++ADMIN_PASSWORD=admin123
++JWT_SECRET=<base64-256-bit>
++GOOGLE_MAPS_KEY=<key>
++SPRING_DATASOURCE_URL=jdbc:postgresql://viberoute-db:5432/route_optimizer
++```
++
++### Reconstruir backend tras merge
++
++```bash
++cd VibeRouteColombia
++docker compose up -d --build backend
++```
++
++### Desarrollo híbrido (recomendado para probar `newmapscaliche`)
++
++```bash
++# Terminal 1 — infra + API
++docker compose up -d db backend
++
++# Terminal 2 — frontend con últimos cambios
++cd frontend_new && npm run dev
++# → http://localhost:5173
++```
++
++---
++
++## 8. Pruebas manuales sugeridas
++
++### 8.1 CORS y login
++
++```http
++OPTIONS http://localhost:8080/api/v1/auth/login
++Origin: http://localhost:5173
++```
++Esperado: respuesta CORS sin rechazo.
++
++### 8.2 Conductor — pedidos propios
++
++1. Login como `DRIVER` → obtener JWT.
++2. `GET /api/v1/orders/mine` con `Authorization: Bearer <token>` → **200**.
++3. `GET /api/v1/orders` con el mismo token → **403**.
++
++### 8.3 PostGIS (si hay datos en `orders`)
++
++Verificar que `ProximityAlertService` no lanza error SQL al reportar ubicación del conductor.
++
++### 8.4 WebSocket
++
++Conectar a `/ws-alertas` con SockJS; en `CONNECT` enviar `Authorization: Bearer <token>`. Sin token → conexión denegada.
++
++---
++
++## 9. Riesgos conocidos y mitigaciones
++
++| Riesgo | Mitigación |
++|--------|------------|
++| Frontend antiguo llama `GET /orders` como DRIVER | Actualizar a `/orders/mine` (hecho en rama `mapa` front). |
++| Imagen Docker sin rebuild | `docker compose build backend` tras merge. |
++| Conductor sin pedidos en BD | Asignar lote + pedidos desde panel ADMIN/LOGISTICS. |
++| CORS hardcodeado | Roadmap: `application.yml` + perfiles `dev`/`prod`. |
++| JWT en WebSocket sin revocación | Comportamiento previo al parche; sin cambio de política de expiración. |
++
++---
++
++## 10. Lo que NO cambió
++
++- Motor de optimización (OR-Tools) y lógica de lotes.
++- Modelo de estados de pedidos (State pattern).
++- Endpoints de autenticación (`/auth/login`, `/auth/register`) salvo CORS.
++- Esquema general de JWT y BCrypt en `AuthService`.
++- Rutas legacy duplicadas (`/api/v1/*` y `/*` sin prefijo) — deuda preexistente.
++
++---
++
++## 11. Roadmap recomendado (nivel empresarial)
++
++1. Externalizar orígenes CORS a configuración por entorno.
++2. Documentar API en OpenAPI 3 (`/orders/mine` en spec).
++3. Tests de integración: `MockMvc` — DRIVER 403 en `/orders`, 200 en `/orders/mine`.
++4. Testcontainers + PostGIS para `findNearbyOrders`.
++5. Unificar rutas solo bajo `/api/v1` en versión mayor.
++
++---
++
++## 12. Referencias internas
++
++- `docs/GUIA_REMEDIACION_SEGURIDAD.md` — remediaciones previas OWASP.
++- `docs/CONTEXTO_TECNICO_MAYO_2026.md` — arquitectura general y roles.
++- Frontend (mismo release): hotfix mapa en `MapsNavigationModule.tsx`, rama `mapa`.
++
++---
++
++## 13. Glosario
++
++| Término | Significado en este parche |
++|---------|----------------------------|
++| **newmapscaliche** | Nombre interno del release backend+mapa conductor (caliche = parche/local, no producto separado). |
++| **mapa** | Rama Git donde se integraron estos cambios. |
++| **mine** | Endpoint REST “mis pedidos” para el repartidor autenticado. |
++
++---
++
++*Documento generado para trazabilidad del release **newmapscaliche**. Mantener actualizado al mergear `mapa` → `develop` o `main`.*
+diff --git a/src/main/java/com/routeoptimizer/config/FirebaseConfig.java b/src/main/java/com/routeoptimizer/config/FirebaseConfig.java
+index 9d55155..8eb3ad2 100644
+--- a/src/main/java/com/routeoptimizer/config/FirebaseConfig.java
++++ b/src/main/java/com/routeoptimizer/config/FirebaseConfig.java
+@@ -3,61 +3,36 @@ package com.routeoptimizer.config;
+ import com.google.auth.oauth2.GoogleCredentials;
+ import com.google.firebase.FirebaseApp;
+ import com.google.firebase.FirebaseOptions;
+-import org.springframework.beans.factory.annotation.Value;
+ import org.springframework.context.annotation.Configuration;
+-import org.slf4j.Logger;
+-import org.slf4j.LoggerFactory;
+ import jakarta.annotation.PostConstruct;
+-
+-import java.io.ByteArrayInputStream;
+ import java.io.FileInputStream;
+-import java.io.InputStream;
+-import java.util.Base64;
+-
++import java.io.IOException;
++ 
+ /**
+  * Configuration to initialize Firebase Admin SDK.
+- * Supports loading credentials from a configurable file path (local/volumes)
+- * or via a Base64-encoded environment variable (PaaS/Docker without volumes).
++ * Note: Requires serviceAccountKey.json in the project root or specified path.
+  */
+ @Configuration
+ public class FirebaseConfig {
+-
+-    private static final Logger log = LoggerFactory.getLogger(FirebaseConfig.class);
+-
+-    @Value("${FIREBASE_CREDENTIALS_PATH:serviceAccountKey.json}")
+-    private String credentialsPath;
+-
+-    @Value("${FIREBASE_CREDENTIALS_BASE64:}")
+-    private String credentialsBase64;
+-
++ 
+     @PostConstruct
+     public void initialize() {
+         try {
+-            InputStream serviceAccount;
+-
+-            // Estrategia 1: Carga en memoria vía variable de entorno (Seguro para Docker/PaaS)
+-            if (credentialsBase64 != null && !credentialsBase64.trim().isEmpty()) {
+-                byte[] decodedBytes = Base64.getDecoder().decode(credentialsBase64);
+-                serviceAccount = new ByteArrayInputStream(decodedBytes);
+-                log.info("🔥 [FIREBASE] Cargando credenciales desde variable de entorno Base64.");
+-            } 
+-            // Estrategia 2: Carga por archivo tradicional (Local dev o Docker Volumes)
+-            else {
+-                serviceAccount = new FileInputStream(credentialsPath);
+-                log.info("🔥 [FIREBASE] Cargando credenciales desde archivo: {}", credentialsPath);
+-            }
+-
++            // Path to your service account key file
++            FileInputStream serviceAccount =
++                new FileInputStream("serviceAccountKey.json");
++ 
+             FirebaseOptions options = FirebaseOptions.builder()
+                 .setCredentials(GoogleCredentials.fromStream(serviceAccount))
++                // Bucket name will be set in properties, but can be set here too
+                 .build();
+-
++ 
+             if (FirebaseApp.getApps().isEmpty()) {
+                 FirebaseApp.initializeApp(options);
+-                log.info("✅ [FIREBASE] Admin SDK inicializado exitosamente.");
+             }
+-        } catch (Exception e) {
+-            // Logueamos como warn para no tumbar la app si no hay Firebase configurado
+-            log.warn("⚠️ [FIREBASE] No se pudo inicializar el SDK. Las subidas fallarán. Causa: {}", e.getMessage());
++        } catch (IOException e) {
++            // Log error but don't prevent app startup unless strictly necessary
++            System.err.println("Firebase could not be initialized. Manifest uploads will fail. " + e.getMessage());
+         }
+     }
+ }
+diff --git a/src/main/java/com/routeoptimizer/config/SecurityConfig.java b/src/main/java/com/routeoptimizer/config/SecurityConfig.java
+index 6345933..6ee5930 100644
+--- a/src/main/java/com/routeoptimizer/config/SecurityConfig.java
++++ b/src/main/java/com/routeoptimizer/config/SecurityConfig.java
+@@ -3,7 +3,6 @@ package com.routeoptimizer.config;
+ import com.routeoptimizer.security.JwtAuthenticationEntryPoint;
+ import com.routeoptimizer.security.JwtAuthenticationFilter;
+ import com.routeoptimizer.security.CustomAccessDeniedHandler;
+-import org.springframework.beans.factory.annotation.Value;
+ import org.springframework.context.annotation.Bean;
+ import org.springframework.context.annotation.Configuration;
+ import org.springframework.http.HttpMethod;
+@@ -15,23 +14,10 @@ import org.springframework.security.config.http.SessionCreationPolicy;
+ import org.springframework.security.config.annotation.method.configuration.EnableMethodSecurity;
+ import org.springframework.security.web.SecurityFilterChain;
+ import org.springframework.security.web.authentication.UsernamePasswordAuthenticationFilter;
+-import org.springframework.web.cors.CorsConfiguration;
+-import org.springframework.web.cors.CorsConfigurationSource;
+-import org.springframework.web.cors.UrlBasedCorsConfigurationSource;
+-
+-import java.util.Arrays;
+-import java.util.List;
+ 
+ /**
+  * Configuración de seguridad de Spring Security.
+  * Define la cadena de filtros, políticas de sesión y permisos por rol.
+- *
+- * CORS Dinámico: Lee orígenes permitidos desde la variable de entorno
+- * VIBEROUTE_CORS_ALLOWED (separados por coma). Si no se define, usa
+- * valores seguros de desarrollo local.
+- *
+- * Ejemplo de valor en producción:
+- *   VIBEROUTE_CORS_ALLOWED=http://localhost:3000,http://192.168.1.50:3000,https://viberoute.com
+  */
+ @Configuration
+ @EnableWebSecurity
+@@ -43,13 +29,6 @@ public class SecurityConfig {
+   private final JwtAuthenticationEntryPoint jwtAuthenticationEntryPoint;
+   private final CustomAccessDeniedHandler customAccessDeniedHandler;
+ 
+-  /**
+-   * Orígenes CORS permitidos, inyectados desde la variable de entorno.
+-   * Usamos el nombre VIBEROUTE_CORS_ALLOWED_ORIGINS especificado.
+-   */
+-  @Value("${VIBEROUTE_CORS_ALLOWED_ORIGINS:http://localhost:3000,http://127.0.0.1:3000}")
+-  private String allowedOriginsRaw;
+-
+   public SecurityConfig(JwtAuthenticationFilter jwtAuthFilter, 
+                         AuthenticationProvider authenticationProvider,
+                         JwtAuthenticationEntryPoint jwtAuthenticationEntryPoint,
+@@ -66,52 +45,29 @@ public class SecurityConfig {
+         .cors(cors -> cors.configurationSource(corsConfigurationSource()))
+         .csrf(AbstractHttpConfigurer::disable)
+         .authorizeHttpRequests(auth -> auth
+-            // ── Públicos ────────────────────────────────────────────────────
+-            .requestMatchers(
+-                "/api/v1/auth/login", "/api/v1/auth/reset-password",
+-                "/api/v1/ping", "/error",
+-                "/auth/login"
+-            ).permitAll()
+-
+-            // ── WebSocket SockJS: Handshake + iframe transport ──────────────
+-            // Estos endpoints son HTTP puro (GET/POST) durante el upgrade;
+-            // deben pasar sin JWT porque SockJS los negocia antes del CONNECT.
+-            .requestMatchers("/ws-alertas/**").permitAll()
+-
+-            // ── Registro restringido a roles administrativos ────────────────
+-            .requestMatchers("/api/v1/auth/register", "/auth/register")
+-                .hasAnyRole("SUPER_ADMIN", "ADMIN", "LOGISTICS")
+-
+-            // ── Super Admin exclusivo ───────────────────────────────────────
+-            .requestMatchers("/api/v1/system/**", "/system/**")
+-                .hasRole("SUPER_ADMIN")
++            .requestMatchers("/api/v1/auth/login", "/api/v1/auth/reset-password", "/api/v1/ping", "/error", "/ws-alertas/**", "/auth/login").permitAll()
++            // Handshake SockJS público; el JWT se valida en STOMP CONNECT (WebSocketAuthChannelInterceptor)
++            .requestMatchers("/api/v1/auth/register", "/auth/register").hasAnyRole("SUPER_ADMIN", "ADMIN", "LOGISTICS")
++            .requestMatchers("/api/v1/system/**", "/system/**").hasRole("SUPER_ADMIN")
+             
+-            // ── Acciones específicas del DRIVER ─────────────────────────────
+-            .requestMatchers(HttpMethod.PATCH, "/api/v1/drivers/*/status", "/drivers/*/status")
+-                .hasAnyRole("DRIVER", "ADMIN", "SUPER_ADMIN")
+-            .requestMatchers(HttpMethod.PATCH, "/api/v1/orders/*/status", "/orders/*/status")
+-                .hasAnyRole("DRIVER", "LOGISTICS", "ADMIN", "SUPER_ADMIN")
++            // Specific DRIVER actions
++            .requestMatchers(HttpMethod.PATCH, "/api/v1/drivers/*/status", "/drivers/*/status").hasAnyRole("DRIVER", "ADMIN", "SUPER_ADMIN")
++            .requestMatchers(HttpMethod.PATCH, "/api/v1/orders/*/status", "/orders/*/status").hasAnyRole("DRIVER", "LOGISTICS", "ADMIN", "SUPER_ADMIN")
+             
+-            // ── Gestión de conductores (no DRIVER) ──────────────────────────
+-            .requestMatchers("/api/v1/drivers", "/api/v1/drivers/**", "/drivers", "/drivers/**")
+-                .hasAnyRole("ADMIN", "LOGISTICS", "SUPER_ADMIN")
++            // Shared Driver management
++            .requestMatchers("/api/v1/drivers", "/api/v1/drivers/**", "/drivers", "/drivers/**").hasAnyRole("ADMIN", "LOGISTICS", "SUPER_ADMIN")
+             
+-            // ── Recursos compartidos (pedidos, stats, reportes, lotes) ──────
+-            .requestMatchers(
+-                "/api/v1/orders", "/api/v1/orders/**", "/orders", "/orders/**",
+-                "/api/v1/stats", "/api/v1/stats/**", "/stats", "/stats/**",
+-                "/api/v1/reports", "/api/v1/reports/**", "/reports", "/reports/**",
+-                "/api/v1/batches", "/api/v1/batches/**", "/batches", "/batches/**"
+-            ).hasAnyRole("DRIVER", "LOGISTICS", "ADMIN", "SUPER_ADMIN")
++            // Shared Logistics/Admin access
++            .requestMatchers("/api/v1/orders", "/api/v1/orders/**", "/orders", "/orders/**",
++                             "/api/v1/stats", "/api/v1/stats/**", "/stats", "/stats/**",
++                             "/api/v1/reports", "/api/v1/reports/**", "/reports", "/reports/**",
++                             "/api/v1/batches", "/api/v1/batches/**", "/batches", "/batches/**").hasAnyRole("DRIVER", "LOGISTICS", "ADMIN", "SUPER_ADMIN")
+             
+-            // ── Monitoreo operacional ───────────────────────────────────────
+-            .requestMatchers(
+-                "/api/v1/batches/**", "/batches/**",
+-                "/api/v1/routes/**", "/routes/**",
+-                "/api/v1/locations/**", "/locations/**"
+-            ).hasAnyRole("DRIVER", "LOGISTICS", "ADMIN", "SUPER_ADMIN")
++            // Operational monitoring (Explicitly permissive for testing)
++            .requestMatchers("/api/v1/batches/**", "/batches/**",
++                             "/api/v1/routes/**", "/routes/**",
++                             "/api/v1/locations/**", "/locations/**").hasAnyRole("DRIVER", "LOGISTICS", "ADMIN", "SUPER_ADMIN")
+             
+-            // ── IA: cualquier usuario autenticado ───────────────────────────
+             .requestMatchers("/api/v1/ai/**").authenticated()
+             .anyRequest().authenticated())
+         .sessionManagement(session -> session
+@@ -125,43 +81,21 @@ public class SecurityConfig {
+     return http.build();
+   }
+ 
+-  /**
+-   * Fuente de configuración CORS dinámica.
+-   * Parsea VIBEROUTE_CORS_ALLOWED_ORIGINS y asegura SIEMPRE la existencia de Vercel.
+-   */
+   @Bean
+-  public CorsConfigurationSource corsConfigurationSource() {
+-    List<String> origins = new java.util.ArrayList<>(Arrays.stream(allowedOriginsRaw.split(","))
+-        .map(String::trim)
+-        .filter(s -> !s.isEmpty())
+-        .toList());
+-
+-    // HARDENING ENTERPRISE: Asegurar siempre Vercel sin importar qué diga el .env local
+-    String vercelDomain = "https://vibe-route-colombia-frontend.vercel.app";
+-    if (!origins.contains(vercelDomain)) {
+-        origins.add(vercelDomain);
+-    }
+-
+-    CorsConfiguration configuration = new CorsConfiguration();
+-    configuration.setAllowedOrigins(origins);
+-    
+-    // Soportar explicitamente OPTIONS para el preflight
+-    configuration.setAllowedMethods(List.of("GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS", "HEAD"));
+-    
+-    // Permitir todos los headers (*) evita rechazos de preflight por headers custom (ej. X-Requested-With)
+-    configuration.setAllowedHeaders(List.of("*"));
+-    
+-    // Exponer header Authorization para que el frontend pueda leer el JWT si viene en header (aunque usen body)
+-    configuration.setExposedHeaders(List.of("Authorization"));
+-    
+-    // Obligatorio para JWT en cookies o peticiones autenticadas
++  public org.springframework.web.cors.CorsConfigurationSource corsConfigurationSource() {
++    org.springframework.web.cors.CorsConfiguration configuration = new org.springframework.web.cors.CorsConfiguration();
++    // Restringir a dominios específicos en producción. Para desarrollo, listamos los permitidos explícitamente.
++    configuration.setAllowedOrigins(java.util.List.of(
++        "http://localhost:3000",
++        "http://127.0.0.1:3000",
++        "http://localhost:5173",
++        "http://127.0.0.1:5173")); 
++    configuration.setAllowedMethods(java.util.List.of("GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"));
++    configuration.setAllowedHeaders(java.util.List.of("Authorization", "Content-Type", "X-Requested-With", "Accept", "Origin"));
++    configuration.setExposedHeaders(java.util.List.of("Authorization"));
+     configuration.setAllowCredentials(true);
+     
+-    // Cachear la respuesta preflight 1 hora (mejora rendimiento en redes móviles)
+-    configuration.setMaxAge(3600L);
+-    
+-    UrlBasedCorsConfigurationSource source = new UrlBasedCorsConfigurationSource();
+-    // Aplicar a TODAS las rutas (/**)
++    org.springframework.web.cors.UrlBasedCorsConfigurationSource source = new org.springframework.web.cors.UrlBasedCorsConfigurationSource();
+     source.registerCorsConfiguration("/**", configuration);
+     return source;
+   }
+diff --git a/src/main/java/com/routeoptimizer/config/UserSeeder.java b/src/main/java/com/routeoptimizer/config/UserSeeder.java
+index 046b581..88250fb 100644
+--- a/src/main/java/com/routeoptimizer/config/UserSeeder.java
++++ b/src/main/java/com/routeoptimizer/config/UserSeeder.java
+@@ -19,8 +19,6 @@ import org.springframework.transaction.annotation.Transactional;
+ @Component
+ public class UserSeeder implements CommandLineRunner {
+ 
+-    private static final org.slf4j.Logger log = org.slf4j.LoggerFactory.getLogger(UserSeeder.class);
+-
+     private final UserRepository userRepository;
+     private final PasswordEncoder passwordEncoder;
+     private final JdbcTemplate jdbcTemplate;
+@@ -38,13 +36,12 @@ public class UserSeeder implements CommandLineRunner {
+     private String adminPassword;
+ 
+     @Override
+-    @Transactional(propagation = org.springframework.transaction.annotation.Propagation.NOT_SUPPORTED)
++    @Transactional
+     public void run(String... args) throws Exception {
+         try {
+-            log.info("=".repeat(60));
+-            log.info("🛡️ [SECURITY] Iniciando sincronización de cuenta maestra...");
+-            log.info("📧 [SYNC] Email detectado: {}", adminEmail);
+-            log.info("=".repeat(60));
++            System.out.println("\n" + "=".repeat(60));
++            System.out.println("🛡️ [SECURITY] Iniciando sincronización de cuenta maestra...");
++            System.out.println("=".repeat(60));
+ 
+             // PASO 1: Eliminar restricción de base de datos que bloquea SUPER_ADMIN
+             // (PostgreSQL fix)
+@@ -57,48 +54,29 @@ public class UserSeeder implements CommandLineRunner {
+             // PASO 2: Sincronizar/Crear el Super Admin forzosamente
+             String hashedMasterPass = passwordEncoder.encode(adminPassword);
+ 
+-            // Única consulta escalar 100% segura basada en ID
+-            java.util.Optional<Long> physicalIdOpt = userRepository.findPhysicalIdByEmail(adminEmail);
+-
+-            if (physicalIdOpt.isPresent()) {
+-                Long userId = physicalIdOpt.get();
+-                boolean isEnabled = userRepository.isPhysicalUserEnabled(userId);
+-
+-                // Si está eliminado lógicamente (soft-delete), abortamos la inserción y evitamos conflictos
+-                if (!isEnabled) {
+-                    log.warn("⚠️ [SYNC] La cuenta maestra existe (ID: {}) pero está deshabilitada (soft-deleted). Se omite creación/actualización.", userId);
+-                    log.info("=".repeat(60));
+-                    return;
+-                }
+-
+-                // Si existe físicamente y ESTÁ habilitado, ahora SÍ usamos JPQL seguro para obtener la entidad polimórfica
+-                User user = userRepository.findByEmailIgnoreCase(adminEmail).orElseThrow(() -> 
+-                    new IllegalStateException("Inconsistencia en BD: Usuario existe y está activo físicamente, pero JPQL no lo encontró."));
+-
+-                // Conservamos la lógica actual de actualizar sus credenciales
+-                user.setRole(Role.SUPER_ADMIN);
+-                user.setPasswordHash(hashedMasterPass);
+-                user.setName("Arquitecto Maestro (VibeRoute)");
+-                user.setAssignedCity("Global");
+-                userRepository.save(user);
+-                log.info("✅ [SYNC] Cuenta maestra ACTUALIZADA con credenciales del .env.");
+-            } else {
+-                // Si no existe físicamente en lo absoluto, es 100% seguro hacer el insert.
+-                User superAdmin = new User();
+-                superAdmin.setName("Arquitecto Maestro (VibeRoute)");
+-                superAdmin.setEmail(adminEmail);
+-                superAdmin.setPasswordHash(hashedMasterPass);
+-                superAdmin.setRole(Role.SUPER_ADMIN);
+-                superAdmin.setAssignedCity("Global");
+-                superAdmin.setPhone("3000000000");
+-                userRepository.save(superAdmin);
+-                log.info("⭐ [SEEDER] Cuenta maestra CREADA desde cero.");
+-            }
+-            log.info("=".repeat(60));
++            userRepository.findByEmail(adminEmail).ifPresentOrElse(
++                    user -> {
++                        user.setRole(Role.SUPER_ADMIN);
++                        user.setName("Arquitecto Maestro (VibeRoute)");
++                        user.setAssignedCity("Global");
++                        userRepository.save(user);
++                        System.out.println("✅ [SYNC] Cuenta maestra verificada (contraseña no modificada).");
++                    },
++                    () -> {
++                        User superAdmin = new User();
++                        superAdmin.setName("Arquitecto Maestro (VibeRoute)");
++                        superAdmin.setEmail(adminEmail);
++                        superAdmin.setPasswordHash(hashedMasterPass);
++                        superAdmin.setRole(Role.SUPER_ADMIN);
++                        superAdmin.setAssignedCity("Global");
++                        superAdmin.setPhone("3000000000");
++                        userRepository.save(superAdmin);
++                        System.out.println("⭐ [SEEDER] Cuenta maestra CREADA desde cero.");
++                    });
++            System.out.println("=".repeat(60) + "\n");
+         } catch (Exception e) {
+-            // Protección defensiva extrema: El Seeder JAMÁS debe tumbar la aplicación
+-            log.error("⚠️ [CRITICAL] Fallo inesperado en el Seeder de usuarios: {}", e.getMessage(), e);
+-            log.error("La aplicación ignorará este fallo y continuará su arranque con normalidad...");
++            System.err.println("⚠️ [CRITICAL] Fallo en el Seeder de usuarios: " + e.getMessage());
++            System.err.println("La aplicación continuará intentando arrancar...");
+         }
+     }
+ }
+diff --git a/src/main/java/com/routeoptimizer/config/WebSocketConfig.java b/src/main/java/com/routeoptimizer/config/WebSocketConfig.java
+index b89687a..a8355c8 100644
+--- a/src/main/java/com/routeoptimizer/config/WebSocketConfig.java
++++ b/src/main/java/com/routeoptimizer/config/WebSocketConfig.java
+@@ -1,173 +1,49 @@
+ package com.routeoptimizer.config;
+ 
+-import com.routeoptimizer.service.JwtService;
+-
+-import org.slf4j.Logger;
+-import org.slf4j.LoggerFactory;
+-import org.springframework.beans.factory.annotation.Value;
++import com.routeoptimizer.security.WebSocketAuthChannelInterceptor;
+ import org.springframework.context.annotation.Configuration;
+ import org.springframework.lang.NonNull;
+-import org.springframework.messaging.Message;
+-import org.springframework.messaging.MessageChannel;
+ import org.springframework.messaging.simp.config.ChannelRegistration;
+ import org.springframework.messaging.simp.config.MessageBrokerRegistry;
+-import org.springframework.messaging.simp.stomp.StompCommand;
+-import org.springframework.messaging.simp.stomp.StompHeaderAccessor;
+-import org.springframework.messaging.support.ChannelInterceptor;
+-import org.springframework.messaging.support.MessageHeaderAccessor;
+-import org.springframework.security.authentication.UsernamePasswordAuthenticationToken;
+-import org.springframework.security.core.userdetails.UserDetails;
+-import org.springframework.security.core.userdetails.UserDetailsService;
+ import org.springframework.web.socket.config.annotation.EnableWebSocketMessageBroker;
+ import org.springframework.web.socket.config.annotation.StompEndpointRegistry;
+ import org.springframework.web.socket.config.annotation.WebSocketMessageBrokerConfigurer;
+ 
+-import java.util.Arrays;
+-import java.util.List;
+-
+ /**
+  * Configuración oficial de WebSockets (STOMP) para VibeRoute Colombia.
+- *
+- * Flujo de autenticación:
+- * 1. El frontend envía un header nativo STOMP "Authorization: Bearer <jwt>"
+- *    durante el frame CONNECT.
+- * 2. El ChannelInterceptor intercepta el CONNECT, extrae el JWT del header,
+- *    valida el token con JwtService y establece el Principal en el contexto
+- *    de mensajería de Spring.
+- * 3. Si el token es inválido o ausente, la conexión se rechaza con un
+- *    StompHeaderAccessor.setLeaveMutable que impide la suscripción.
+- *
+- * CORS para WebSocket: Reutiliza la misma variable VIBEROUTE_CORS_ALLOWED
+- * definida en SecurityConfig para mantener una política unificada.
++ * Este "túnel" permitirá hablar con el celular del repartidor instantáneamente.
+  */
+ @Configuration
+ @EnableWebSocketMessageBroker
+ public class WebSocketConfig implements WebSocketMessageBrokerConfigurer {
+ 
+-    private static final Logger log = LoggerFactory.getLogger(WebSocketConfig.class);
++    private final WebSocketAuthChannelInterceptor webSocketAuthChannelInterceptor;
+ 
+-    private final JwtService jwtService;
+-    private final UserDetailsService userDetailsService;
+-
+-    @Value("${VIBEROUTE_CORS_ALLOWED:http://localhost:3000,https://localhost:3000,http://127.0.0.1:3000}")
+-    private String allowedOriginsRaw;
++    public WebSocketConfig(WebSocketAuthChannelInterceptor webSocketAuthChannelInterceptor) {
++        this.webSocketAuthChannelInterceptor = webSocketAuthChannelInterceptor;
++    }
+ 
+-    public WebSocketConfig(JwtService jwtService, UserDetailsService userDetailsService) {
+-        this.jwtService = jwtService;
+-        this.userDetailsService = userDetailsService;
++    @Override
++    public void configureClientInboundChannel(@NonNull ChannelRegistration registration) {
++        registration.interceptors(webSocketAuthChannelInterceptor);
+     }
+ 
+     @Override
+     public void configureMessageBroker(@NonNull MessageBrokerRegistry config) {
+-        // /topic se usa para broadcasting (alertas de vibración, eventos logísticos)
++        // /topic se usará para mandar los "rayos de información" (alertas de vibración) al celular
+         config.enableSimpleBroker("/topic");
+-        // /app como prefijo para mensajes del cliente al servidor (@MessageMapping)
+         config.setApplicationDestinationPrefixes("/app");
+     }
+ 
+     @Override
+     public void registerStompEndpoints(@NonNull StompEndpointRegistry registry) {
+-        // Parsear los orígenes permitidos desde la variable de entorno
+-        String[] origins = Arrays.stream(allowedOriginsRaw.split(","))
+-                .map(String::trim)
+-                .filter(s -> !s.isEmpty())
+-                .toArray(String[]::new);
+-
++        // El frontend React / Vite se conectará a "wss://tuservidor/ws-alertas"
+         registry.addEndpoint("/ws-alertas")
+-                .setAllowedOrigins(origins)
+-                .withSockJS(); // Fallback para navegadores que no soportan WebSocket nativo
+-    }
+-
+-    /**
+-     * Registra el ChannelInterceptor que autentica conexiones STOMP con JWT.
+-     * Se ejecuta en el canal de entrada (inbound) antes de que el mensaje
+-     * llegue al broker o a un @MessageMapping handler.
+-     */
+-    @Override
+-    public void configureClientInboundChannel(@NonNull ChannelRegistration registration) {
+-        registration.interceptors(new JwtStompChannelInterceptor());
+-    }
+-
+-    // ─── Interceptor Interno ────────────────────────────────────────────────────
+-
+-    /**
+-     * Interceptor de canal STOMP que autentica al usuario durante el CONNECT.
+-     *
+-     * Solo actúa en el frame CONNECT; los frames SUBSCRIBE, SEND, DISCONNECT
+-     * ya heredan el Principal establecido en el CONNECT, por lo que no
+-     * necesitan re-autenticación (comportamiento estándar de Spring Messaging).
+-     */
+-    private class JwtStompChannelInterceptor implements ChannelInterceptor {
+-
+-        @Override
+-        public Message<?> preSend(@NonNull Message<?> message, @NonNull MessageChannel channel) {
+-            StompHeaderAccessor accessor = MessageHeaderAccessor.getAccessor(
+-                    message, StompHeaderAccessor.class);
+-
+-            if (accessor == null || accessor.getCommand() == null) {
+-                return message;
+-            }
+-
+-            if (StompCommand.CONNECT.equals(accessor.getCommand())) {
+-                authenticateFromStompHeaders(accessor);
+-            }
+-
+-            return message;
+-        }
+-
+-        /**
+-         * Extrae el JWT del header nativo STOMP "Authorization" y, si es
+-         * válido, establece el Principal autenticado en el accessor.
+-         *
+-         * Si el token es inválido o no se proporciona, se loguea una
+-         * advertencia pero NO se lanza excepción — el cliente quedará
+-         * como anónimo y los topics protegidos le negarán el acceso
+-         * a través de las reglas de seguridad de Spring.
+-         */
+-        private void authenticateFromStompHeaders(StompHeaderAccessor accessor) {
+-            List<String> authHeaders = accessor.getNativeHeader("Authorization");
+-
+-            if (authHeaders == null || authHeaders.isEmpty()) {
+-                log.warn("[WS-AUTH] CONNECT sin header Authorization — conexión anónima");
+-                return;
+-            }
+-
+-            String authHeader = authHeaders.get(0);
+-            if (!authHeader.startsWith("Bearer ")) {
+-                log.warn("[WS-AUTH] Header Authorization mal formado: {}", authHeader);
+-                return;
+-            }
+-
+-            String jwt = authHeader.substring(7);
+-
+-            try {
+-                String userEmail = jwtService.extractUsername(jwt);
+-                if (userEmail == null) {
+-                    log.warn("[WS-AUTH] No se pudo extraer email del JWT");
+-                    return;
+-                }
+-
+-                UserDetails userDetails = userDetailsService.loadUserByUsername(userEmail);
+-                if (!jwtService.isTokenValid(jwt, userDetails)) {
+-                    log.warn("[WS-AUTH] JWT inválido o expirado para: {}", userEmail);
+-                    return;
+-                }
+-
+-                // Establecer autenticación en el contexto de mensajería
+-                UsernamePasswordAuthenticationToken authToken =
+-                        new UsernamePasswordAuthenticationToken(
+-                                userDetails,
+-                                null,
+-                                userDetails.getAuthorities()
+-                        );
+-                accessor.setUser(authToken);
+-
+-                log.info("[WS-AUTH] ✅ STOMP CONNECT autenticado: {} ({})",
+-                        userEmail, userDetails.getAuthorities());
+-
+-            } catch (Exception e) {
+-                log.error("[WS-AUTH] Error procesando JWT en STOMP CONNECT: {}", e.getMessage());
+-            }
+-        }
++                .setAllowedOrigins(
++                    "http://localhost:3000",
++                    "http://127.0.0.1:3000",
++                    "http://localhost:5173",
++                    "http://127.0.0.1:5173")
++                .withSockJS();
+     }
+ }
+diff --git a/src/main/java/com/routeoptimizer/controller/AnalyticsController.java b/src/main/java/com/routeoptimizer/controller/AnalyticsController.java
+index 8b8b009..cfee420 100644
+--- a/src/main/java/com/routeoptimizer/controller/AnalyticsController.java
++++ b/src/main/java/com/routeoptimizer/controller/AnalyticsController.java
+@@ -2,12 +2,9 @@ package com.routeoptimizer.controller;
+ 
+ import com.routeoptimizer.dto.DeliveryStatisticsDTO;
+ import com.routeoptimizer.dto.DriverRankingDTO;
+-import com.routeoptimizer.model.entity.User;
+-import com.routeoptimizer.model.enums.Role;
+ import com.routeoptimizer.service.AnalyticsService;
+ 
+ import org.springframework.http.ResponseEntity;
+-import org.springframework.security.core.context.SecurityContextHolder;
+ import org.springframework.web.bind.annotation.*;
+ 
+ import java.util.List;
+@@ -29,33 +26,16 @@ public class AnalyticsController {
+      * Obtiene el resumen de entregas (Hoy, Semana, Mes).
+      */
+     @GetMapping("/delivery-summary")
+-    public ResponseEntity<DeliveryStatisticsDTO> getDeliverySummary(
+-            @RequestParam(required = false) String city) {
+-        String cityFilter = resolveCity(city);
+-        return ResponseEntity.ok(analyticsService.getDeliveryStatistics(cityFilter));
++    public ResponseEntity<DeliveryStatisticsDTO> getDeliverySummary() {
++        return ResponseEntity.ok(analyticsService.getDeliveryStatistics());
+     }
+ 
+     /**
+      * Obtiene el Top 5 de repartidores más efectivos.
+      */
+     @GetMapping("/driver-ranking")
+-    public ResponseEntity<List<DriverRankingDTO>> getDriverRanking(
+-            @RequestParam(required = false) String city) {
+-        String cityFilter = resolveCity(city);
+-        return ResponseEntity.ok(analyticsService.getEfficiencyRanking(cityFilter));
+-    }
+-
+-    /**
+-     * Resuelve la ciudad efectiva: si el usuario es LOGISTICS, fuerza su ciudad asignada.
+-     */
+-    private String resolveCity(String requestedCity) {
+-        var auth = SecurityContextHolder.getContext().getAuthentication();
+-        if (auth != null && auth.getPrincipal() instanceof User user) {
+-            if (user.getRole() == Role.LOGISTICS) {
+-                return user.getAssignedCity();
+-            }
+-        }
+-        return requestedCity;
++    public ResponseEntity<List<DriverRankingDTO>> getDriverRanking() {
++        return ResponseEntity.ok(analyticsService.getEfficiencyRanking());
+     }
+ 
+     /**
+@@ -64,7 +44,6 @@ public class AnalyticsController {
+     @GetMapping("/financial-summary")
+     public ResponseEntity<com.routeoptimizer.dto.FinancialAnalyticsDTO> getFinancialSummary(
+             @org.springframework.web.bind.annotation.RequestParam(required = false) String city) {
+-        String cityFilter = resolveCity(city);
+-        return ResponseEntity.ok(analyticsService.getFinancialAnalytics(cityFilter));
++        return ResponseEntity.ok(analyticsService.getFinancialAnalytics(city));
+     }
+ }
+diff --git a/src/main/java/com/routeoptimizer/controller/BatchController.java b/src/main/java/com/routeoptimizer/controller/BatchController.java
+index 96c01a9..a6bdbaf 100644
+--- a/src/main/java/com/routeoptimizer/controller/BatchController.java
++++ b/src/main/java/com/routeoptimizer/controller/BatchController.java
+@@ -6,17 +6,12 @@ import java.util.stream.Collectors;
+ 
+ import com.routeoptimizer.dto.OrderResponseDTO;
+ import com.routeoptimizer.model.entity.Batch;
+-import com.routeoptimizer.model.entity.User;
+-import com.routeoptimizer.model.enums.Role;
+ import com.routeoptimizer.model.entity.Route;
+ import com.routeoptimizer.repository.OrderRepository;
+ import com.routeoptimizer.service.BatchService;
+-import com.routeoptimizer.service.DriverService;
+ import com.routeoptimizer.service.RouteService;
+ import org.springframework.transaction.annotation.Transactional;
+-import org.springframework.http.HttpStatus;
+ import org.springframework.http.ResponseEntity;
+-import org.springframework.security.core.context.SecurityContextHolder;
+ import org.springframework.web.bind.annotation.*;
+ 
+ @RestController
+@@ -27,16 +22,13 @@ public class BatchController {
+     private final RouteService routeService;
+     private final com.routeoptimizer.service.SmartDispatchService smartDispatchService;
+     private final OrderRepository orderRepository;
+-    private final DriverService driverService;
+ 
+     public BatchController(BatchService batchService, RouteService routeService,
+-            com.routeoptimizer.service.SmartDispatchService smartDispatchService, OrderRepository orderRepository,
+-            DriverService driverService) {
++            com.routeoptimizer.service.SmartDispatchService smartDispatchService, OrderRepository orderRepository) {
+         this.batchService = batchService;
+         this.routeService = routeService;
+         this.smartDispatchService = smartDispatchService;
+         this.orderRepository = orderRepository;
+-        this.driverService = driverService;
+     }
+ 
+     /**
+@@ -46,11 +38,9 @@ public class BatchController {
+      */
+     @GetMapping
+     @Transactional(readOnly = true)
+-    public ResponseEntity<?> listAll(@RequestParam(required = false) String city) {
++    public ResponseEntity<?> listAll() {
+         try {
+-            String cityFilter = resolveCity(city);
+-
+-            List<Map<String, Object>> safeBatches = batchService.findAll(cityFilter).stream()
++            List<Map<String, Object>> safeBatches = batchService.findAll().stream()
+                     .map(batchService::convertToSafeMap)
+                     .collect(Collectors.toList());
+             return ResponseEntity.ok(safeBatches);
+@@ -65,38 +55,16 @@ public class BatchController {
+             Batch batch = batchService.findById(id);
+             if (batch == null)
+                 return ResponseEntity.noContent().build();
+-            if (isForbiddenForLogistics(batch.getCity())) {
+-                return ResponseEntity.status(HttpStatus.FORBIDDEN).build();
+-            }
+-
+-            // Mapeamos los pedidos iterativamente a DTOs en línea (Map) para evitar LazyInitializationException
+-            List<Map<String, Object>> safeOrders = List.of();
+-            if (batch.getOrders() != null) {
+-                safeOrders = batch.getOrders().stream().map(order -> {
+-                    Map<String, Object> oMap = new java.util.HashMap<>();
+-                    oMap.put("id", order.getId());
+-                    oMap.put("address", order.getAddress());
+-                    oMap.put("clientName", order.getClientName());
+-                    // Order no tiene campo 'phone', devolvemos string vacío para no romper contrato
+-                    oMap.put("phone", ""); 
+-                    oMap.put("clientReference", order.getClientReference());
+-                    oMap.put("location", order.getLocation());
+-                    oMap.put("status", order.getStatus() != null ? order.getStatus().name() : null);
+-                    oMap.put("deliveryOrder", order.getDeliveryOrder());
+-                    return oMap;
+-                }).collect(Collectors.toList());
+-            }
+ 
+-            // Retornamos un Map seguro
++            // Retornamos un Map seguro para evitar LazyInitializationException en
++            // collections
+             return ResponseEntity.ok(Map.of(
+                     "id", batch.getId(),
+                     "aiCopilotTips", batch.getAiCopilotTips() != null ? batch.getAiCopilotTips() : "",
+                     "driver",
+                     batch.getDriver() != null
+                             ? Map.of("id", batch.getDriver().getId(), "name", batch.getDriver().getName())
+-                            : Map.of(),
+-                    "orders", safeOrders
+-            ));
++                            : Map.of()));
+         } catch (Exception e) {
+             return ResponseEntity.noContent().build();
+         }
+@@ -115,10 +83,6 @@ public class BatchController {
+         Double lng = body != null ? (Double) body.get("lng") : null;
+         String mode = body != null ? (String) body.get("mode") : "EFFICIENCY";
+ 
+-        Batch batch = batchService.findById(id);
+-        if (isForbiddenForLogistics(batch.getCity())) {
+-            return ResponseEntity.status(HttpStatus.FORBIDDEN).build();
+-        }
+         return ResponseEntity.ok(routeService.optimizeAndSaveRoute(id, lat, lng, mode));
+     }
+ 
+@@ -126,8 +90,7 @@ public class BatchController {
+     @Transactional(readOnly = true)
+     public ResponseEntity<List<Map<String, Object>>> getPendingBatches(
+             @org.springframework.web.bind.annotation.RequestParam(required = false) String city) {
+-        String cityFilter = resolveCity(city);
+-        List<Map<String, Object>> safeBatches = batchService.getPendingBatches(cityFilter).stream()
++        List<Map<String, Object>> safeBatches = batchService.getPendingBatches(city).stream()
+                 .map(batchService::convertToSafeMap)
+                 .collect(Collectors.toList());
+         return ResponseEntity.ok(safeBatches);
+@@ -138,10 +101,6 @@ public class BatchController {
+     public ResponseEntity<Map<String, Object>> updateManifest(@PathVariable Long id,
+             @org.springframework.web.bind.annotation.RequestBody Map<String, String> body) {
+         String manifestUrl = body.get("manifestUrl");
+-        Batch existing = batchService.findById(id);
+-        if (isForbiddenForLogistics(existing.getCity())) {
+-            return ResponseEntity.status(HttpStatus.FORBIDDEN).build();
+-        }
+         Batch batch = batchService.updateManifestUrl(id, manifestUrl);
+         return ResponseEntity.ok(batchService.convertToSafeMap(batch));
+     }
+@@ -153,7 +112,7 @@ public class BatchController {
+         @SuppressWarnings("unchecked")
+         List<Integer> idsRaw = (List<Integer>) body.get("orderIds");
+         List<Long> orderIds = idsRaw.stream().map(Integer::longValue).collect(Collectors.toList());
+-        String city = resolveCity((String) body.get("city"));
++        String city = (String) body.get("city");
+         Batch batch = batchService.createManualBatch(orderIds, city);
+         return ResponseEntity.ok(batchService.convertToSafeMap(batch));
+     }
+@@ -162,14 +121,6 @@ public class BatchController {
+     @Transactional
+     public ResponseEntity<Map<String, Object>> assignDriverToBatch(@PathVariable Long batchId,
+             @PathVariable Long driverId) {
+-        Batch existing = batchService.findById(batchId);
+-        if (isForbiddenForLogistics(existing.getCity())) {
+-            return ResponseEntity.status(HttpStatus.FORBIDDEN).build();
+-        }
+-        var driver = driverService.findById(driverId);
+-        if (isForbiddenForLogistics(driver.getAssignedCity())) {
+-            return ResponseEntity.status(HttpStatus.FORBIDDEN).build();
+-        }
+         Batch batch = batchService.assignDriverToBatch(batchId, driverId);
+         return ResponseEntity.ok(batchService.convertToSafeMap(batch));
+     }
+@@ -177,8 +128,7 @@ public class BatchController {
+     @GetMapping("/smart-dispatch/suggest")
+     public ResponseEntity<com.routeoptimizer.dto.SmartDispatchPlanDTO> suggestSmartDispatch(
+             @RequestParam(required = false) String city) {
+-        String cityFilter = resolveCity(city);
+-        return ResponseEntity.ok(smartDispatchService.suggestDispatchPlan(cityFilter));
++        return ResponseEntity.ok(smartDispatchService.suggestDispatchPlan(city));
+     }
+ 
+     @PostMapping("/smart-dispatch/apply")
+@@ -209,9 +159,6 @@ public class BatchController {
+                     }
+                 } catch (Exception ignore) {
+                 }
+-                if (isForbiddenForLogistics(city)) {
+-                    return ResponseEntity.status(HttpStatus.FORBIDDEN).build();
+-                }
+ 
+                 com.routeoptimizer.model.entity.Batch newBatch = batchService.createManualBatch(orderIds, city);
+                 if (driverId != null) {
+@@ -228,24 +175,4 @@ public class BatchController {
+                     .body(Map.of("status", "error", "message", "Error al aplicar el plan: " + e.getMessage()));
+         }
+     }
+-
+-    private String resolveCity(String requestedCity) {
+-        User user = authenticatedUser();
+-        if (user != null && user.getRole() == Role.LOGISTICS) {
+-            return user.getAssignedCity();
+-        }
+-        return requestedCity;
+-    }
+-
+-    private boolean isForbiddenForLogistics(String resourceCity) {
+-        User user = authenticatedUser();
+-        return user != null
+-                && user.getRole() == Role.LOGISTICS
+-                && (resourceCity == null || !resourceCity.equalsIgnoreCase(user.getAssignedCity()));
+-    }
+-
+-    private User authenticatedUser() {
+-        var auth = SecurityContextHolder.getContext().getAuthentication();
+-        return auth != null && auth.getPrincipal() instanceof User user ? user : null;
+-    }
+ }
+diff --git a/src/main/java/com/routeoptimizer/controller/DriverController.java b/src/main/java/com/routeoptimizer/controller/DriverController.java
+index 418dd78..19ba485 100644
+--- a/src/main/java/com/routeoptimizer/controller/DriverController.java
++++ b/src/main/java/com/routeoptimizer/controller/DriverController.java
+@@ -5,13 +5,10 @@ import com.routeoptimizer.dto.DriverResponseDTO;
+ import com.routeoptimizer.model.Coordinate;
+ import com.routeoptimizer.model.enums.DriverStatus;
+ import com.routeoptimizer.model.entity.Driver;
+-import com.routeoptimizer.model.entity.User;
+-import com.routeoptimizer.model.enums.Role;
+ import com.routeoptimizer.service.DriverService;
+ 
+ import org.springframework.http.HttpStatus;
+ import org.springframework.http.ResponseEntity;
+-import org.springframework.security.core.context.SecurityContextHolder;
+ import org.springframework.web.bind.annotation.*;
+ 
+ import java.util.List;
+@@ -37,18 +34,16 @@ public class DriverController {
+   }
+ 
+   @GetMapping
+-  public ResponseEntity<List<DriverResponseDTO>> listAll(@RequestParam(required = false) String city) {
+-    String cityFilter = resolveCity(city);
+-    List<DriverResponseDTO> drivers = driverService.findAll(cityFilter).stream()
++  public ResponseEntity<List<DriverResponseDTO>> listAll() {
++    List<DriverResponseDTO> drivers = driverService.findAll().stream()
+         .map(DriverResponseDTO::fromEntity)
+         .collect(Collectors.toList());
+     return ResponseEntity.ok(drivers);
+   }
+ 
+   @GetMapping("/available")
+-  public ResponseEntity<List<DriverResponseDTO>> listAvailable(@RequestParam(required = false) String city) {
+-    String cityFilter = resolveCity(city);
+-    List<DriverResponseDTO> available = driverService.findAvailable(cityFilter).stream()
++  public ResponseEntity<List<DriverResponseDTO>> listAvailable() {
++    List<DriverResponseDTO> available = driverService.findAvailable().stream()
+         .map(DriverResponseDTO::fromEntity)
+         .collect(Collectors.toList());
+     return ResponseEntity.ok(available);
+@@ -56,31 +51,19 @@ public class DriverController {
+ 
+   @GetMapping("/{id}")
+   public ResponseEntity<DriverResponseDTO> getDriver(@PathVariable Long id) {
+-    Driver driver = driverService.findById(id);
+-    if (isForbiddenForLogistics(driver.getAssignedCity())) {
+-      return ResponseEntity.status(HttpStatus.FORBIDDEN).build();
+-    }
+-    return ResponseEntity.ok(DriverResponseDTO.fromEntity(driver));
++    return ResponseEntity.ok(DriverResponseDTO.fromEntity(driverService.findById(id)));
+   }
+ 
+   @PatchMapping("/{id}/status")
+   public ResponseEntity<DriverResponseDTO> changeStatus(
+       @PathVariable Long id,
+       @RequestParam DriverStatus status) {
+-    Driver existing = driverService.findById(id);
+-    if (isForbiddenForLogistics(existing.getAssignedCity())) {
+-      return ResponseEntity.status(HttpStatus.FORBIDDEN).build();
+-    }
+     Driver updated = driverService.changeStatus(id, status);
+     return ResponseEntity.ok(DriverResponseDTO.fromEntity(updated));
+   }
+ 
+   @PostMapping("/{id}/assign-to-batch")
+   public ResponseEntity<DriverResponseDTO> assignToBatch(@PathVariable Long id) {
+-    Driver existing = driverService.findById(id);
+-    if (isForbiddenForLogistics(existing.getAssignedCity())) {
+-      return ResponseEntity.status(HttpStatus.FORBIDDEN).build();
+-    }
+     Driver driver = driverService.assignDriverToBatch(id);
+     return ResponseEntity.ok(DriverResponseDTO.fromEntity(driver));
+   }
+@@ -89,56 +72,13 @@ public class DriverController {
+   public ResponseEntity<DriverResponseDTO> updateLocation(
+       @PathVariable Long id,
+       @RequestBody Coordinate location) {
+-    Driver existing = driverService.findById(id);
+-    if (isForbiddenForLogistics(existing.getAssignedCity())) {
+-      return ResponseEntity.status(HttpStatus.FORBIDDEN).build();
+-    }
+     Driver updated = driverService.updateLocation(id, location);
+     return ResponseEntity.ok(DriverResponseDTO.fromEntity(updated));
+   }
+ 
+   @GetMapping("/fleet-status")
+-  public ResponseEntity<List<DriverResponseDTO>> getFleetStatus(@RequestParam(required = false) String city) {
+-    String cityFilter = resolveCity(city);
+-    return ResponseEntity.ok(driverService.getFleetStatus(cityFilter));
+-  }
+-
+-  private String resolveCity(String requestedCity) {
+-    User user = authenticatedUser();
+-    if (user != null) {
+-      if (user.getRole() == Role.LOGISTICS) {
+-        return user.getAssignedCity();
+-      }
+-    }
+-    return requestedCity;
+-  }
+-
+-  private boolean isForbiddenForLogistics(String resourceCity) {
+-    User user = authenticatedUser();
+-    return user != null
+-        && user.getRole() == Role.LOGISTICS
+-        && (resourceCity == null || !resourceCity.equalsIgnoreCase(user.getAssignedCity()));
+-  }
+-
+-  private User authenticatedUser() {
+-    var auth = SecurityContextHolder.getContext().getAuthentication();
+-    return auth != null && auth.getPrincipal() instanceof User user ? user : null;
++  public ResponseEntity<List<DriverResponseDTO>> getFleetStatus() {
++    return ResponseEntity.ok(driverService.getFleetStatus());
+   }
+ 
+-  @GetMapping("/debug-all")
+-  public ResponseEntity<List<java.util.Map<String, Object>>> debugAllDrivers() {
+-    List<Driver> all = driverService.findAll();
+-    List<java.util.Map<String, Object>> result = new java.util.ArrayList<>();
+-    for (Driver d : all) {
+-      java.util.Map<String, Object> map = new java.util.LinkedHashMap<>();
+-      map.put("id", d.getId());
+-      map.put("name", d.getName());
+-      map.put("email", d.getEmail());
+-      map.put("status", d.getStatus());
+-      map.put("assignedCity", d.getAssignedCity());
+-      map.put("role", d.getRole());
+-      result.add(map);
+-    }
+-    return ResponseEntity.ok(result);
+-  }
+ }
+diff --git a/src/main/java/com/routeoptimizer/controller/OrderController.java b/src/main/java/com/routeoptimizer/controller/OrderController.java
+index 6441228..2b3a217 100644
+--- a/src/main/java/com/routeoptimizer/controller/OrderController.java
++++ b/src/main/java/com/routeoptimizer/controller/OrderController.java
+@@ -3,14 +3,11 @@ package com.routeoptimizer.controller;
+ import com.routeoptimizer.dto.OrderCreateDTO;
+ import com.routeoptimizer.dto.OrderResponseDTO;
+ import com.routeoptimizer.model.entity.Order;
+-import com.routeoptimizer.model.entity.User;
+ import com.routeoptimizer.model.enums.OrderStatus;
+-import com.routeoptimizer.model.enums.Role;
+ import com.routeoptimizer.service.OrderService;
+ 
+ import org.springframework.http.HttpStatus;
+ import org.springframework.http.ResponseEntity;
+-import org.springframework.security.core.context.SecurityContextHolder;
+ import org.springframework.web.bind.annotation.*;
+ 
+ import java.util.List;
+@@ -38,13 +35,28 @@ public class OrderController {
+     }
+   }
+ 
++  @GetMapping("/mine")
++  public ResponseEntity<List<OrderResponseDTO>> listMine() {
++    var auth = org.springframework.security.core.context.SecurityContextHolder.getContext().getAuthentication();
++    if (auth == null || !(auth.getPrincipal() instanceof com.routeoptimizer.model.entity.User user)
++        || user.getRole() != com.routeoptimizer.model.enums.Role.DRIVER) {
++      return ResponseEntity.status(HttpStatus.FORBIDDEN).build();
++    }
++    List<OrderResponseDTO> orders = orderService.findByDriverId(user.getId()).stream()
++        .map(orderService::enrichOrderResponse)
++        .collect(Collectors.toList());
++    return ResponseEntity.ok(orders);
++  }
++
+   @GetMapping
+   public ResponseEntity<List<OrderResponseDTO>> listAll(@RequestParam(required = false) String city) {
+-    String filterCity = resolveCity(city);
++    String filterCity = city;
+     
+-    // AISLAMIENTO REGIONAL: Forzar filtro por ciudad si el usuario es Logístico
+     var auth = org.springframework.security.core.context.SecurityContextHolder.getContext().getAuthentication();
+     if (auth != null && auth.getPrincipal() instanceof com.routeoptimizer.model.entity.User user) {
++        if (user.getRole() == com.routeoptimizer.model.enums.Role.DRIVER) {
++            return ResponseEntity.status(HttpStatus.FORBIDDEN).build();
++        }
+         if (user.getRole() == com.routeoptimizer.model.enums.Role.LOGISTICS) {
+             filterCity = user.getAssignedCity();
+         }
+@@ -65,7 +77,7 @@ public class OrderController {
+ 
+   @GetMapping("/pending")
+   public ResponseEntity<List<OrderResponseDTO>> listPendingWithoutBatch(@RequestParam(required = false) String city) {
+-    String searchCity = resolveCity(city);
++    String searchCity = city;
+     
+     // Auto-filtro por ciudad si el usuario es Logístico y no especificó ciudad
+     var auth = org.springframework.security.core.context.SecurityContextHolder.getContext().getAuthentication();
+@@ -84,9 +96,6 @@ public class OrderController {
+   @GetMapping("/{id}")
+   public ResponseEntity<OrderResponseDTO> getOrder(@PathVariable Long id) {
+     Order order = orderService.findById(id);
+-    if (isForbiddenForLogistics(order.getCity())) {
+-      return ResponseEntity.status(HttpStatus.FORBIDDEN).build();
+-    }
+     return ResponseEntity.ok(orderService.enrichOrderResponse(order));
+   }
+ 
+@@ -96,10 +105,6 @@ public class OrderController {
+       @RequestParam OrderStatus status,
+       @RequestParam(required = false) String reason) {
+     try {
+-      Order existing = orderService.findById(id);
+-      if (isForbiddenForLogistics(existing.getCity())) {
+-        return ResponseEntity.status(HttpStatus.FORBIDDEN).build();
+-      }
+       Order updated = orderService.updateStatus(id, status, reason);
+       return ResponseEntity.ok(orderService.enrichOrderResponse(updated));
+     } catch (IllegalStateException e) {
+@@ -110,20 +115,7 @@ public class OrderController {
+   }
+ 
+   @GetMapping("/city/{city}")
+-  public ResponseEntity<?> listByCity(@PathVariable String city) {
+-    if (isForbiddenForLogistics(city)) {
+-      return ResponseEntity.status(HttpStatus.FORBIDDEN).build();
+-    }
+-    // SEGURIDAD: Rechazar acceso cross-city para usuarios LOGISTICS
+-    var auth = org.springframework.security.core.context.SecurityContextHolder.getContext().getAuthentication();
+-    if (auth != null && auth.getPrincipal() instanceof com.routeoptimizer.model.entity.User user) {
+-      if (user.getRole() == com.routeoptimizer.model.enums.Role.LOGISTICS) {
+-        if (!city.equalsIgnoreCase(user.getAssignedCity())) {
+-          return ResponseEntity.status(org.springframework.http.HttpStatus.FORBIDDEN)
+-              .body(Map.of("error", "No tiene autorización para consultar pedidos de la ciudad: " + city));
+-        }
+-      }
+-    }
++  public ResponseEntity<List<OrderResponseDTO>> listByCity(@PathVariable String city) {
+     List<OrderResponseDTO> orders = orderService.findByCity(city).stream()
+         .map(orderService::enrichOrderResponse)
+         .collect(Collectors.toList());
+@@ -134,9 +126,6 @@ public class OrderController {
+   public ResponseEntity<Map<String, Object>> getCountByStatusAndCity(
+       @PathVariable String city,
+       @RequestParam OrderStatus status) {
+-    if (isForbiddenForLogistics(city)) {
+-      return ResponseEntity.status(HttpStatus.FORBIDDEN).build();
+-    }
+     long count = orderService.countByStatusAndCity(status, city);
+     return ResponseEntity.ok(Map.of(
+         "city", city,
+@@ -176,34 +165,10 @@ public class OrderController {
+   @DeleteMapping("/{id}")
+   public ResponseEntity<?> deleteOrder(@PathVariable Long id) {
+     try {
+-      Order existing = orderService.findById(id);
+-      if (isForbiddenForLogistics(existing.getCity())) {
+-        return ResponseEntity.status(HttpStatus.FORBIDDEN).build();
+-      }
+       orderService.deleteOrder(id);
+       return ResponseEntity.ok(Map.of("message", "Pedido eliminado correctamente"));
+     } catch (RuntimeException e) {
+       return ResponseEntity.status(HttpStatus.NOT_FOUND).body(Map.of("error", e.getMessage()));
+     }
+   }
+-
+-  private String resolveCity(String requestedCity) {
+-    User user = authenticatedUser();
+-    if (user != null && user.getRole() == Role.LOGISTICS) {
+-      return user.getAssignedCity();
+-    }
+-    return requestedCity;
+-  }
+-
+-  private boolean isForbiddenForLogistics(String resourceCity) {
+-    User user = authenticatedUser();
+-    return user != null
+-        && user.getRole() == Role.LOGISTICS
+-        && (resourceCity == null || !resourceCity.equalsIgnoreCase(user.getAssignedCity()));
+-  }
+-
+-  private User authenticatedUser() {
+-    var auth = SecurityContextHolder.getContext().getAuthentication();
+-    return auth != null && auth.getPrincipal() instanceof User user ? user : null;
+-  }
+ }
+diff --git a/src/main/java/com/routeoptimizer/controller/ReportController.java b/src/main/java/com/routeoptimizer/controller/ReportController.java
+index c2533a2..2ef9708 100644
+--- a/src/main/java/com/routeoptimizer/controller/ReportController.java
++++ b/src/main/java/com/routeoptimizer/controller/ReportController.java
+@@ -1,11 +1,7 @@
+ package com.routeoptimizer.controller;
+ 
+-import com.routeoptimizer.model.entity.User;
+-import com.routeoptimizer.model.enums.Role;
+ import com.routeoptimizer.service.ReportService;
+-import org.springframework.http.HttpStatus;
+ import org.springframework.http.ResponseEntity;
+-import org.springframework.security.core.context.SecurityContextHolder;
+ import org.springframework.web.bind.annotation.*;
+ import org.springframework.web.multipart.MultipartFile;
+ import java.util.*;
+@@ -40,10 +36,7 @@ public class ReportController {
+     }
+ 
+     @GetMapping("/generate-global")
+-    public ResponseEntity<byte[]> generateGlobalReport(@RequestParam(required = false) String city) {
+-        if (isForbiddenForLogistics(city)) {
+-            return ResponseEntity.status(HttpStatus.FORBIDDEN).build();
+-        }
++    public ResponseEntity<byte[]> generateGlobalReport() {
+         byte[] pdfBytes = reportService.generateGlobalReport();
+         
+         return ResponseEntity.ok()
+@@ -53,19 +46,11 @@ public class ReportController {
+     }
+ 
+     @GetMapping("/generate-word")
+-    public ResponseEntity<byte[]> generateOrdersReportWord(
+-            @RequestParam(required = false) String city,
+-            @RequestParam(required = false) String status,
+-            @RequestParam(required = false) String driver,
+-            @RequestParam(required = false) String search) {
+-        if (isForbiddenForLogistics(city)) {
+-            return ResponseEntity.status(HttpStatus.FORBIDDEN).build();
+-        }
+-        String cityFilter = resolveCity(city);
+-        byte[] wordBytes = reportService.generateOrdersReportWord(cityFilter, status, driver, search);
++    public ResponseEntity<byte[]> generateOrdersReportWord(@RequestParam(required = false) String city) {
++        byte[] wordBytes = reportService.generateOrdersReportWord(city);
+         
+-        String filename = (cityFilter != null && !cityFilter.trim().isEmpty() && !cityFilter.equalsIgnoreCase("undefined")) 
+-            ? "Lista_Pedidos_" + cityFilter.trim() + ".docx" 
++        String filename = (city != null && !city.trim().isEmpty() && !city.equalsIgnoreCase("undefined")) 
++            ? "Lista_Pedidos_" + city.trim() + ".docx" 
+             : "Reporte_Operativo_Pedidos.docx";
+         
+         return ResponseEntity.ok()
+@@ -75,21 +60,13 @@ public class ReportController {
+     }
+ 
+     @GetMapping("/generate-excel")
+-    public ResponseEntity<byte[]> generateOrdersReportExcel(
+-            @RequestParam(required = false) String city,
+-            @RequestParam(required = false) String status,
+-            @RequestParam(required = false) String driver,
+-            @RequestParam(required = false) String search) {
+-        if (isForbiddenForLogistics(city)) {
+-            return ResponseEntity.status(HttpStatus.FORBIDDEN).build();
+-        }
+-        String cityFilter = resolveCity(city);
+-        byte[] excelBytes = reportService.generateOrdersReportExcel(cityFilter, status, driver, search);
++    public ResponseEntity<byte[]> generateOrdersReportExcel(@RequestParam(required = false) String city) {
++        byte[] excelBytes = reportService.generateOrdersReportExcel(city);
+         
+         // Eliminamos el fallback global para el logístico. 
+         // Si no hay ciudad, el nombre será genérico, pero el contenido ya está filtrado en el service.
+-        String filename = (cityFilter != null && !cityFilter.trim().isEmpty() && !cityFilter.equalsIgnoreCase("undefined")) 
+-            ? "Lista_Pedidos_" + cityFilter.trim() + ".xlsx" 
++        String filename = (city != null && !city.trim().isEmpty() && !city.equalsIgnoreCase("undefined")) 
++            ? "Lista_Pedidos_" + city.trim() + ".xlsx" 
+             : "Reporte_Operativo_Pedidos.xlsx";
+         
+         return ResponseEntity.ok()
+@@ -100,13 +77,9 @@ public class ReportController {
+ 
+     @GetMapping("/generate-general-word")
+     public ResponseEntity<byte[]> generateGeneralReportWord(@RequestParam(required = false) String city) {
+-        if (isForbiddenForLogistics(city)) {
+-            return ResponseEntity.status(HttpStatus.FORBIDDEN).build();
+-        }
+-        String cityFilter = resolveCity(city);
+-        byte[] wordBytes = reportService.generateGeneralReportWord(cityFilter);
++        byte[] wordBytes = reportService.generateGeneralReportWord(city);
+         
+-        String filename = (cityFilter != null && !cityFilter.isEmpty()) ? "Reporte_Estrategico_" + cityFilter + ".docx" : "Reporte_Estrategico_Global.docx";
++        String filename = (city != null && !city.isEmpty()) ? "Reporte_Estrategico_" + city + ".docx" : "Reporte_Estrategico_Global.docx";
+         
+         return ResponseEntity.ok()
+                 .contentType(org.springframework.http.MediaType.parseMediaType("application/vnd.openxmlformats-officedocument.wordprocessingml.document"))
+@@ -118,27 +91,4 @@ public class ReportController {
+     public ResponseEntity<List<Map<String, String>>> listDocuments() {
+         return ResponseEntity.ok(reportService.listDocuments());
+     }
+-
+-    private String resolveCity(String requestedCity) {
+-        User user = authenticatedUser();
+-        if (user != null && user.getRole() == Role.LOGISTICS) {
+-            return user.getAssignedCity();
+-        }
+-        return requestedCity;
+-    }
+-
+-    private boolean isForbiddenForLogistics(String requestedCity) {
+-        User user = authenticatedUser();
+-        return user != null
+-                && user.getRole() == Role.LOGISTICS
+-                && requestedCity != null
+-                && !requestedCity.trim().isEmpty()
+-                && !requestedCity.equalsIgnoreCase("undefined")
+-                && !requestedCity.equalsIgnoreCase(user.getAssignedCity());
+-    }
+-
+-    private User authenticatedUser() {
+-        var auth = SecurityContextHolder.getContext().getAuthentication();
+-        return auth != null && auth.getPrincipal() instanceof User user ? user : null;
+-    }
+ }
+diff --git a/src/main/java/com/routeoptimizer/external/GoogleMapsAdapter.java b/src/main/java/com/routeoptimizer/external/GoogleMapsAdapter.java
+index 952b61f..badf6b0 100644
+--- a/src/main/java/com/routeoptimizer/external/GoogleMapsAdapter.java
++++ b/src/main/java/com/routeoptimizer/external/GoogleMapsAdapter.java
+@@ -144,12 +144,12 @@ public class GoogleMapsAdapter implements MapService {
+   }
+ 
+   @Override
+-  public long[][] getDistanceMatrix(List<Coordinate> points, String mode) {
++  public long[][] getDistanceMatrix(List<Coordinate> points) {
+     int n = points.size();
+     long[][] matrix = new long[n][n];
+ 
+     if (apiKey == null || apiKey.isEmpty() || n <= 1) {
+-      log.warn("Google Maps API Key not detected. Calculating Euclidean travel time (seconds) for optimization.");
++      log.warn("Google Maps API Key not detected. Calculating Euclidean distances for optimization.");
+       for (int i = 0; i < n; i++) {
+         for (int j = 0; j < n; j++) {
+           if (i == j) {
+@@ -161,9 +161,9 @@ public class GoogleMapsAdapter implements MapService {
+             if (p1 == null || p2 == null || p1.getLat() == null || p2.getLat() == null) {
+                 matrix[i][j] = 999999;
+             } else {
+-                // Simple Euclidean distance (approximate meters) / 8.33 m/s (approx 30km/h) = seconds
++                // Simple Euclidean distance (approximate meters)
+                 double d = Math.sqrt(Math.pow(p1.getLat() - p2.getLat(), 2) + Math.pow(p1.getLng() - p2.getLng(), 2)) * 111320;
+-                matrix[i][j] = (long) (d / 8.33); 
++                matrix[i][j] = (long) d;
+             }
+           }
+         }
+@@ -179,22 +179,13 @@ public class GoogleMapsAdapter implements MapService {
+     }
+     String pointsString = sb.toString();
+ 
+-    // [HOTFIX] TOGGLE DE TRÁFICO: Solo inyectamos tráfico real si el modo es PRIORITY
+-    // Esto ahorra costos significativos (Tier Standard vs Tier Advanced en Google Cloud)
+-    UriComponentsBuilder builder = UriComponentsBuilder.fromHttpUrl("https://maps.googleapis.com/maps/api/distancematrix/json")
++    String url = UriComponentsBuilder.fromHttpUrl("https://maps.googleapis.com/maps/api/distancematrix/json")
+         .queryParam("origins", pointsString)
+         .queryParam("destinations", pointsString)
+-        .queryParam("key", apiKey);
+-
+-    if ("PRIORITY".equalsIgnoreCase(mode)) {
+-        builder.queryParam("departure_time", "now")
+-               .queryParam("traffic_model", "best_guess");
+-        log.info("🚀 TRAFFIC MODE ENABLED (Tier Advanced Billing)");
+-    } else {
+-        log.info("🌿 EFFICIENCY MODE ENABLED (Tier Standard Billing)");
+-    }
+-
+-    String url = builder.build().encode().toUriString();
++        .queryParam("key", apiKey)
++        .build()
++        .encode()
++        .toUriString();
+ 
+     try {
+       JsonNode response = restTemplate.getForObject(url, JsonNode.class);
+@@ -205,12 +196,7 @@ public class GoogleMapsAdapter implements MapService {
+           for (int j = 0; j < n; j++) {
+             JsonNode element = elements.get(j);
+             if ("OK".equals(element.path("status").asText())) {
+-              // [FASE 3] OPTIMIZACIÓN POR TIEMPO: Usamos duration_in_traffic si está disponible
+-              if (element.has("duration_in_traffic")) {
+-                  matrix[i][j] = element.path("duration_in_traffic").path("value").asLong();
+-              } else {
+-                  matrix[i][j] = element.path("duration").path("value").asLong();
+-              }
++              matrix[i][j] = element.path("distance").path("value").asLong();
+             } else {
+               matrix[i][j] = 999999; // Penalty for invalid route
+             }
+@@ -221,10 +207,10 @@ public class GoogleMapsAdapter implements MapService {
+         log.warn("Google Maps API returned {}. Falling back to Euclidean.", response != null ? response.path("status").asText() : "null");
+       }
+     } catch (Exception e) {
+-      log.error("Error getting distance matrix with traffic: {}", e.getMessage());
++      log.error("Error getting distance matrix: {}", e.getMessage());
+     }
+ 
+-    log.warn("Calculating Euclidean travel time for optimization as fallback.");
++    log.warn("Calculating Euclidean distances for optimization as fallback.");
+     for (int i = 0; i < n; i++) {
+       for (int j = 0; j < n; j++) {
+         if (i == j) {
+@@ -236,7 +222,7 @@ public class GoogleMapsAdapter implements MapService {
+               matrix[i][j] = 999999;
+           } else {
+               double d = Math.sqrt(Math.pow(p1.getLat() - p2.getLat(), 2) + Math.pow(p1.getLng() - p2.getLng(), 2)) * 111320;
+-              matrix[i][j] = (long) (d / 8.33); // 30km/h avg
++              matrix[i][j] = (long) d;
+           }
+         }
+       }
+diff --git a/src/main/java/com/routeoptimizer/model/entity/Driver.java b/src/main/java/com/routeoptimizer/model/entity/Driver.java
+index 24a797d..f93f82b 100644
+--- a/src/main/java/com/routeoptimizer/model/entity/Driver.java
++++ b/src/main/java/com/routeoptimizer/model/entity/Driver.java
+@@ -11,7 +11,6 @@ import jakarta.persistence.*;
+  */
+ @Entity
+ @Table(name = "drivers")
+-@DiscriminatorValue("DRIVER")
+ public class Driver extends User {
+ 
+   @Embedded
+diff --git a/src/main/java/com/routeoptimizer/model/entity/User.java b/src/main/java/com/routeoptimizer/model/entity/User.java
+index e997104..020484c 100644
+--- a/src/main/java/com/routeoptimizer/model/entity/User.java
++++ b/src/main/java/com/routeoptimizer/model/entity/User.java
+@@ -9,7 +9,7 @@ import org.springframework.security.core.authority.SimpleGrantedAuthority;
+ import org.springframework.security.core.userdetails.UserDetails;
+ 
+ import org.hibernate.annotations.SQLDelete;
+-import org.hibernate.annotations.SQLRestriction;
++import org.hibernate.annotations.Where;
+ 
+ import java.util.Collection;
+ import java.util.List;
+@@ -21,10 +21,8 @@ import java.util.List;
+ @Entity
+ @Table(name = "users")
+ @Inheritance(strategy = InheritanceType.JOINED)
+-@DiscriminatorColumn(name = "user_type", discriminatorType = DiscriminatorType.STRING)
+-@DiscriminatorValue("USER")
+ @SQLDelete(sql = "UPDATE users SET enabled = false WHERE id = ?")
+-@SQLRestriction("enabled = true")
++@Where(clause = "enabled = true")
+ public class User implements UserDetails {
+ 
+   @Id
+diff --git a/src/main/java/com/routeoptimizer/optimization/OrToolsStrategy.java b/src/main/java/com/routeoptimizer/optimization/OrToolsStrategy.java
+index 2bf542e..942454d 100644
+--- a/src/main/java/com/routeoptimizer/optimization/OrToolsStrategy.java
++++ b/src/main/java/com/routeoptimizer/optimization/OrToolsStrategy.java
+@@ -48,87 +48,43 @@ public class OrToolsStrategy implements OptimizationStrategy {
+ 
+     RoutingIndexManager manager = new RoutingIndexManager(numNodes, numVehicles, depotNode);
+ 
+-    // MODO EFICIENCIA: Tiempo Pura (basado en Tráfico si está disponible)
+-    // MODO PRIORIDAD: Tiempo con bonos
++    // MODO EFICIENCIA: Distancia Pura
++    // MODO PRIORIDAD: Distancia con bonos
+     boolean isPriorityMode = "PRIORITY".equalsIgnoreCase(finalMode);
+-    long[][] timeMatrix = generateDistanceMatrix(orders, startLocation, finalMode);
++    long[][] distanceMatrix = generateDistanceMatrix(orders, startLocation);
+ 
+     RoutingModel routing = new RoutingModel(manager);
+ 
+     final int transitCallbackIndex = routing.registerTransitCallback((long fromIndex, long toIndex) -> {
+       int fromNode = manager.indexToNode(fromIndex);
+       int toNode = manager.indexToNode(toIndex);
+-      if (fromNode >= timeMatrix.length || toNode >= timeMatrix[0].length) return 999999L;
++      if (fromNode >= distanceMatrix.length || toNode >= distanceMatrix[0].length) return 999999L;
+       
+-      long travelTime = timeMatrix[fromNode][toNode];
++      long distance = distanceMatrix[fromNode][toNode];
+       
+-      // MODO PRIORIDAD: Reducimos artificialmente el "costo" de viajar hacia un pedido prioritario
+-      // para que el algoritmo lo agende lo antes posible.
+-      if (isPriorityMode && toNode > 0) {
+-          Order target = orders.get(toNode - 1);
+-          if (target.getPriority() == com.routeoptimizer.model.enums.Priority.HIGH) {
+-              return travelTime / 2; // Bono de prioridad (50% menos costo de arco)
+-          }
+-      }
+-      
+-      return travelTime;
++      // En OR-Tools modificar el costo del arco no garantiza orden de visita.
++      // Si es modo prioridad, el ordenamiento se maneja previamente o fuera de este callback.
++      return distance;
+     });
+ 
+     routing.setArcCostEvaluatorOfAllVehicles(transitCallbackIndex);
+ 
+-    // [FASE 3] DIMENSIÓN DE TIEMPO (Time Windows)
+-    String timeDimensionName = "Time";
+-    routing.addDimension(
+-        transitCallbackIndex,
+-        3600 * 4, // Permitir esperas (Slack) de hasta 4 horas
+-        3600 * 24, // Tiempo máximo de ruta (Horizon: 24h)
+-        false, // No forzar inicio en cero
+-        timeDimensionName
+-    );
+-    com.google.ortools.constraintsolver.RoutingDimension timeDimension = routing.getMutableDimension(timeDimensionName);
+-
+-    // [HOTFIX] SINCRONIZACIÓN DEL NODO CERO
+-    // Seteamos la hora actual del sistema como el punto de inicio para el conductor.
+-    // Esto asegura que las ventanas de tiempo (toSecondOfDay) sean relativas al momento real de salida.
+-    long nowInSeconds = java.time.LocalTime.now().toSecondOfDay();
+-    timeDimension.cumulVar(manager.nodeToIndex(0)).setValue(nowInSeconds);
+-    log.info("🚀 Ruta sincronizada con inicio a las: {}s", nowInSeconds);
+-
+-    // [FASE 3] RESTRICCIONES DE VENTANAS DE TIEMPO
+-    // Nodo 0 es el depósito (ubicación actual del conductor). 
+-    // Los pedidos empiezan desde el índice 1.
+-    for (int i = 0; i < orders.size(); i++) {
+-        Order order = orders.get(i);
+-        if (order.getTimeWindowStart() != null && order.getTimeWindowEnd() != null) {
+-            long startSeconds = order.getTimeWindowStart().toSecondOfDay();
+-            long endSeconds = order.getTimeWindowEnd().toSecondOfDay();
+-            
+-            // El índice en OR-Tools para el nodo i+1
+-            long index = manager.nodeToIndex(i + 1);
+-            timeDimension.cumulVar(index).setRange(startSeconds, endSeconds);
+-            
+-            log.info("⏰ Ventana para pedido {}: {}s - {}s", order.getId(), startSeconds, endSeconds);
+-        }
+-    }
+-
+     RoutingSearchParameters searchParameters = com.google.ortools.constraintsolver.main.defaultRoutingSearchParameters()
+         .toBuilder()
+         .setFirstSolutionStrategy(FirstSolutionStrategy.Value.PATH_CHEAPEST_ARC) 
+-        .setTimeLimit(com.google.protobuf.Duration.newBuilder().setSeconds(5).build()) // Aumentamos a 5s para ventanas complejas
++        .setTimeLimit(com.google.protobuf.Duration.newBuilder().setSeconds(2).build())
+         .build();
+ 
+     Assignment solution = routing.solveWithParameters(searchParameters);
+ 
+     if (solution == null) {
+-      log.error("❌ No se encontró una solución que respete las ventanas de tiempo. Reintentando sin restricciones...");
+-      // Fallback: Si falla con ventanas, podríamos intentar resolver sin ellas, 
+-      // pero por ahora devolvemos la lista original para seguridad.
++      log.error("❌ No se encontró una solución óptima.");
+       return new Route.Builder().forBatch(orders.get(0).getBatchId()).withStops(orders).build();
+     }
+ 
+     List<Order> optimizedStops = new ArrayList<>();
+     long index = routing.start(0);
+-    long totalTime = 0;
++    long totalDistance = 0;
+ 
+     while (!routing.isEnd(index)) {
+       int nodeIndex = manager.indexToNode(index);
+@@ -136,23 +92,23 @@ public class OrToolsStrategy implements OptimizationStrategy {
+         optimizedStops.add(orders.get(nodeIndex - 1));
+       }
+       long nextIndex = solution.value(routing.nextVar(index));
+-      totalTime += routing.getArcCostForVehicle(index, nextIndex, 0);
++      totalDistance += routing.getArcCostForVehicle(index, nextIndex, 0);
+       index = nextIndex;
+     }
+ 
+     return new Route.Builder()
+         .forBatch(orders.get(0).getBatchId())
+         .withStops(optimizedStops)
+-        .withTotalDistance(totalTime) // Aquí guardamos el tiempo total (segundos)
++        .withTotalDistance(totalDistance)
+         .build();
+   }
+ 
+-  private long[][] generateDistanceMatrix(List<Order> orders, Coordinate startLocation, String mode) {
++  private long[][] generateDistanceMatrix(List<Order> orders, Coordinate startLocation) {
+     List<Coordinate> points = new ArrayList<>();
+     points.add(startLocation);
+     for (Order o : orders) {
+       points.add(new Coordinate(o.getLat(), o.getLng()));
+     }
+-    return mapService.getDistanceMatrix(points, mode);
++    return mapService.getDistanceMatrix(points);
+   }
+ }
+diff --git a/src/main/java/com/routeoptimizer/repository/BatchRepository.java b/src/main/java/com/routeoptimizer/repository/BatchRepository.java
+index 27a05e3..7bf3711 100644
+--- a/src/main/java/com/routeoptimizer/repository/BatchRepository.java
++++ b/src/main/java/com/routeoptimizer/repository/BatchRepository.java
+@@ -12,8 +12,6 @@ import java.util.UUID;
+ 
+ @Repository
+ public interface BatchRepository extends JpaRepository<Batch, Long> {
+-    List<Batch> findByCityIgnoreCase(String city);
+-
+     List<Batch> findByStatus(String status);
+ 
+     List<Batch> findByCreationDate(LocalDate date);
+diff --git a/src/main/java/com/routeoptimizer/repository/DriverRepository.java b/src/main/java/com/routeoptimizer/repository/DriverRepository.java
+index 6899dab..87aefc3 100644
+--- a/src/main/java/com/routeoptimizer/repository/DriverRepository.java
++++ b/src/main/java/com/routeoptimizer/repository/DriverRepository.java
+@@ -19,6 +19,4 @@ public interface DriverRepository extends JpaRepository<Driver, Long> {
+   
+   // Buscar por ciudad asignada (case-insensitive)
+   List<Driver> findByAssignedCityIgnoreCase(String city);
+-
+-  List<Driver> findByStatusAndAssignedCityIgnoreCase(DriverStatus status, String city);
+ }
+diff --git a/src/main/java/com/routeoptimizer/repository/OrderRepository.java b/src/main/java/com/routeoptimizer/repository/OrderRepository.java
+index ae82943..bab02db 100644
+--- a/src/main/java/com/routeoptimizer/repository/OrderRepository.java
++++ b/src/main/java/com/routeoptimizer/repository/OrderRepository.java
+@@ -33,16 +33,16 @@ public interface OrderRepository extends JpaRepository<Order, Long> {
+     @Query("SELECT o FROM Order o WHERE o.batchId IS NULL AND o.city = :city")
+     List<Order> findByBatchIdIsNullAndCity(@Param("city") String city);
+ 
+-    @Query(value = "SELECT * FROM orders o WHERE ST_DWithin(" +
+-            "CAST(ST_SetSRID(ST_MakePoint(o.lng, o.lat), 4326) AS geography), " + // Wait, should it
+-                                                                                  // correspond to lng
+-                                                                                  // and
+-                                                                                  // lat?
++    @Query(value = "SELECT * FROM orders o WHERE o.location_lat IS NOT NULL AND o.location_lng IS NOT NULL AND ST_DWithin(" +
++            "CAST(ST_SetSRID(ST_MakePoint(o.location_lng, o.location_lat), 4326) AS geography), " +
+             "CAST(ST_SetSRID(ST_MakePoint(:lng, :lat), 4326) AS geography), " +
+             ":radiusMeters)", nativeQuery = true)
+     List<Order> findNearbyOrders(@Param("lat") double lat, @Param("lng") double lng,
+             @Param("radiusMeters") double radiusMeters);
+ 
++    @Query("SELECT o FROM Order o JOIN Batch b ON o.batchId = b.id WHERE b.driver.id = :driverId")
++    List<Order> findByDriverId(@Param("driverId") Long driverId);
++
+     List<Order> findByCity(String city);
+ 
+     long countByStatusAndCity(OrderStatus status, String city);
+@@ -50,9 +50,6 @@ public interface OrderRepository extends JpaRepository<Order, Long> {
+     @Query("SELECT COUNT(o) FROM Order o WHERE o.status = com.routeoptimizer.model.enums.OrderStatus.DELIVERED AND o.actualDeliveryTime >= :start")
+     long countSuccessfulDeliveriesSince(@Param("start") java.time.LocalDateTime start);
+ 
+-    @Query("SELECT COUNT(o) FROM Order o WHERE o.status = com.routeoptimizer.model.enums.OrderStatus.DELIVERED AND o.actualDeliveryTime >= :start AND o.city = :city")
+-    long countSuccessfulDeliveriesSinceAndCity(@Param("start") java.time.LocalDateTime start, @Param("city") String city);
+-
+     @Query("SELECT new com.routeoptimizer.dto.DriverRankingDTO(" +
+             "r.name, " +
+             "SUM(CASE WHEN o.status = com.routeoptimizer.model.enums.OrderStatus.DELIVERED THEN 1L ELSE 0L END), " +
+@@ -67,22 +64,6 @@ public interface OrderRepository extends JpaRepository<Order, Long> {
+     List<com.routeoptimizer.dto.DriverRankingDTO> getDriverRankings(
+             org.springframework.data.domain.Pageable pageable);
+ 
+-    @Query("SELECT new com.routeoptimizer.dto.DriverRankingDTO(" +
+-            "r.name, " +
+-            "SUM(CASE WHEN o.status = com.routeoptimizer.model.enums.OrderStatus.DELIVERED THEN 1L ELSE 0L END), " +
+-            "(SUM(CASE WHEN o.status = com.routeoptimizer.model.enums.OrderStatus.DELIVERED THEN 1.0 ELSE 0.0 END) / COUNT(o)) * 100.0, "
+-            +
+-            "'') " +
+-            "FROM Order o JOIN Batch b ON o.batchId = b.id JOIN b.driver r " +
+-            "WHERE o.status IN (com.routeoptimizer.model.enums.OrderStatus.DELIVERED, com.routeoptimizer.model.enums.OrderStatus.RETURNED, com.routeoptimizer.model.enums.OrderStatus.CANCELLED) "
+-            +
+-            "AND o.city = :city " +
+-            "GROUP BY r.name " +
+-            "ORDER BY SUM(CASE WHEN o.status = com.routeoptimizer.model.enums.OrderStatus.DELIVERED THEN 1L ELSE 0L END) DESC")
+-    List<com.routeoptimizer.dto.DriverRankingDTO> getDriverRankingsByCity(
+-            @Param("city") String city,
+-            org.springframework.data.domain.Pageable pageable);
+-
+     @Query("SELECT SUM(o.price) FROM Order o WHERE o.status = com.routeoptimizer.model.enums.OrderStatus.DELIVERED")
+     java.math.BigDecimal getTotalRevenue();
+ 
+@@ -102,6 +83,6 @@ public interface OrderRepository extends JpaRepository<Order, Long> {
+     @Query("SELECT COUNT(o) FROM Order o JOIN Batch b ON o.batchId = b.id JOIN b.driver r WHERE r.name = :name AND (o.status = com.routeoptimizer.model.enums.OrderStatus.CANCELLED OR o.status = com.routeoptimizer.model.enums.OrderStatus.RETURNED)")
+     long countFailedDeliveriesForDriver(@Param("name") String name);
+ 
+-    @Query("SELECT o FROM Order o")
++    @Query("SELECT o FROM Order o LEFT JOIN Batch b ON o.batchId = b.id LEFT JOIN b.driver d")
+     List<Order> findAllWithDriver();
+ }
+diff --git a/src/main/java/com/routeoptimizer/repository/UserRepository.java b/src/main/java/com/routeoptimizer/repository/UserRepository.java
+index 1c4a698..da204a4 100644
+--- a/src/main/java/com/routeoptimizer/repository/UserRepository.java
++++ b/src/main/java/com/routeoptimizer/repository/UserRepository.java
+@@ -11,12 +11,4 @@ import java.util.Optional;
+ public interface UserRepository extends JpaRepository<User, Long> {
+   Optional<User> findByEmail(String email);
+   Optional<User> findByEmailIgnoreCase(String email);
+-
+-  // Escalar nativo por ID: Resuelve el bug de Optional.empty() cuando la columna enabled es NULL en DB
+-  @org.springframework.data.jpa.repository.Query(value = "SELECT id FROM users WHERE LOWER(email) = LOWER(?1) LIMIT 1", nativeQuery = true)
+-  Optional<Long> findPhysicalIdByEmail(String email);
+-
+-  // Verificación robusta del flag, convirtiendo NULL a false a nivel de base de datos
+-  @org.springframework.data.jpa.repository.Query(value = "SELECT COALESCE(enabled, false) FROM users WHERE id = ?1", nativeQuery = true)
+-  boolean isPhysicalUserEnabled(Long id);
+ }
+diff --git a/src/main/java/com/routeoptimizer/security/WebSocketAuthChannelInterceptor.java b/src/main/java/com/routeoptimizer/security/WebSocketAuthChannelInterceptor.java
+new file mode 100644
+index 0000000..e008ef4
+--- /dev/null
++++ b/src/main/java/com/routeoptimizer/security/WebSocketAuthChannelInterceptor.java
+@@ -0,0 +1,62 @@
++package com.routeoptimizer.security;
++
++import com.routeoptimizer.service.JwtService;
++import org.springframework.lang.NonNull;
++import org.springframework.messaging.Message;
++import org.springframework.messaging.MessageChannel;
++import org.springframework.messaging.simp.stomp.StompCommand;
++import org.springframework.messaging.simp.stomp.StompHeaderAccessor;
++import org.springframework.messaging.support.ChannelInterceptor;
++import org.springframework.messaging.support.MessageHeaderAccessor;
++import org.springframework.security.authentication.UsernamePasswordAuthenticationToken;
++import org.springframework.security.core.context.SecurityContextHolder;
++import org.springframework.security.core.userdetails.UserDetails;
++import org.springframework.security.core.userdetails.UserDetailsService;
++import org.springframework.stereotype.Component;
++
++/**
++ * Valida el JWT en el frame STOMP CONNECT antes de permitir suscripciones.
++ */
++@Component
++public class WebSocketAuthChannelInterceptor implements ChannelInterceptor {
++
++    private final JwtService jwtService;
++    private final UserDetailsService userDetailsService;
++
++    public WebSocketAuthChannelInterceptor(JwtService jwtService, UserDetailsService userDetailsService) {
++        this.jwtService = jwtService;
++        this.userDetailsService = userDetailsService;
++    }
++
++    @Override
++    public Message<?> preSend(@NonNull Message<?> message, @NonNull MessageChannel channel) {
++        StompHeaderAccessor accessor = MessageHeaderAccessor.getAccessor(message, StompHeaderAccessor.class);
++        if (accessor == null || !StompCommand.CONNECT.equals(accessor.getCommand())) {
++            return message;
++        }
++
++        String authHeader = accessor.getFirstNativeHeader("Authorization");
++        if (authHeader == null || !authHeader.startsWith("Bearer ")) {
++            throw new org.springframework.security.access.AccessDeniedException("Token JWT requerido para WebSocket");
++        }
++
++        String jwt = authHeader.substring(7);
++        try {
++            String userEmail = jwtService.extractUsername(jwt);
++            UserDetails userDetails = userDetailsService.loadUserByUsername(userEmail);
++            if (!jwtService.isTokenValid(jwt, userDetails)) {
++                throw new org.springframework.security.access.AccessDeniedException("Token JWT inválido o expirado");
++            }
++            UsernamePasswordAuthenticationToken authToken = new UsernamePasswordAuthenticationToken(
++                    userDetails, null, userDetails.getAuthorities());
++            accessor.setUser(authToken);
++            SecurityContextHolder.getContext().setAuthentication(authToken);
++        } catch (org.springframework.security.access.AccessDeniedException e) {
++            throw e;
++        } catch (Exception e) {
++            throw new org.springframework.security.access.AccessDeniedException("Autenticación WebSocket fallida");
++        }
++
++        return message;
++    }
++}
+diff --git a/src/main/java/com/routeoptimizer/service/AnalyticsService.java b/src/main/java/com/routeoptimizer/service/AnalyticsService.java
+index 67c92fb..34e8004 100644
+--- a/src/main/java/com/routeoptimizer/service/AnalyticsService.java
++++ b/src/main/java/com/routeoptimizer/service/AnalyticsService.java
+@@ -38,14 +38,9 @@ public class AnalyticsService {
+      */
+     @Transactional(readOnly = true)
+     public com.routeoptimizer.dto.FinancialAnalyticsDTO getFinancialAnalytics(String cityFilter) {
+-        String cleanCity = cityFilter;
+-        if (cleanCity == null || cleanCity.trim().isEmpty() || cleanCity.equalsIgnoreCase("undefined") || cleanCity.equalsIgnoreCase("Global")) {
+-            cleanCity = null;
+-        }
+-
+         java.math.BigDecimal revenue;
+-        if (cleanCity != null) {
+-            revenue = orderRepository.getRevenueByCity(cleanCity);
++        if (cityFilter != null && !cityFilter.isEmpty()) {
++            revenue = orderRepository.getRevenueByCity(cityFilter);
+         } else {
+             revenue = orderRepository.getTotalRevenue();
+         }
+@@ -63,8 +58,8 @@ public class AnalyticsService {
+                 if (driverOpt.isPresent()) {
+                     com.routeoptimizer.model.entity.Driver d = driverOpt.get();
+                     // Si hay filtro de ciudad, solo sumamos costos de conductores de esa ciudad
+-                    if (cleanCity != null
+-                            && !cleanCity.equalsIgnoreCase(d.getAssignedCity())) {
++                    if (cityFilter != null && !cityFilter.isEmpty()
++                            && !cityFilter.equalsIgnoreCase(d.getAssignedCity())) {
+                         continue;
+                     }
+                     java.math.BigDecimal costPerHour = d.getCostPerHour() != null ? d.getCostPerHour()
+@@ -88,7 +83,7 @@ public class AnalyticsService {
+         }
+ 
+         Map<String, java.math.BigDecimal> monthlyRevenue = new HashMap<>();
+-        List<Object[]> monthlyData = orderRepository.getMonthlyRevenueNative(cleanCity);
++        List<Object[]> monthlyData = orderRepository.getMonthlyRevenueNative(cityFilter);
+         for (Object[] row : monthlyData) {
+             String month = (String) row[0];
+             Object rawTotal = row[1];
+@@ -109,38 +104,19 @@ public class AnalyticsService {
+      * Calculates successful deliveries comparing different time periods.
+      */
+     @Transactional(readOnly = true)
+-    public DeliveryStatisticsDTO getDeliveryStatistics(String cityFilter) {
+-        String cleanCity = cityFilter;
+-        if (cleanCity == null || cleanCity.trim().isEmpty() || cleanCity.equalsIgnoreCase("undefined") || cleanCity.equalsIgnoreCase("Global")) {
+-            cleanCity = null;
+-        }
+-
++    public DeliveryStatisticsDTO getDeliveryStatistics() {
+         LocalDateTime todayStart = LocalDateTime.now().with(LocalTime.MIN);
+         LocalDateTime weekStart = LocalDateTime.now().minusWeeks(1);
+         LocalDateTime monthStart = LocalDateTime.now().minusMonths(1);
+ 
+-        long today;
+-        long week;
+-        long month;
+-
+-        if (cleanCity != null) {
+-            today = orderRepository.countSuccessfulDeliveriesSinceAndCity(todayStart, cleanCity);
+-            week = orderRepository.countSuccessfulDeliveriesSinceAndCity(weekStart, cleanCity);
+-            month = orderRepository.countSuccessfulDeliveriesSinceAndCity(monthStart, cleanCity);
+-        } else {
+-            today = orderRepository.countSuccessfulDeliveriesSince(todayStart);
+-            week = orderRepository.countSuccessfulDeliveriesSince(weekStart);
+-            month = orderRepository.countSuccessfulDeliveriesSince(monthStart);
+-        }
++        long today = orderRepository.countSuccessfulDeliveriesSince(todayStart);
++        long week = orderRepository.countSuccessfulDeliveriesSince(weekStart);
++        long month = orderRepository.countSuccessfulDeliveriesSince(monthStart);
+ 
+         Map<String, Long> byCity = new HashMap<>();
+-        if (cleanCity != null) {
+-            byCity.put(cleanCity, orderRepository.countByStatusAndCity(OrderStatus.DELIVERED, cleanCity));
+-        } else {
+-            byCity.put("Pasto", orderRepository.countByStatusAndCity(OrderStatus.DELIVERED, "Pasto"));
+-            byCity.put("Bogotá", orderRepository.countByStatusAndCity(OrderStatus.DELIVERED, "Bogotá"));
+-            byCity.put("Medellín", orderRepository.countByStatusAndCity(OrderStatus.DELIVERED, "Medellín"));
+-        }
++        byCity.put("Pasto", orderRepository.countByStatusAndCity(OrderStatus.DELIVERED, "Pasto"));
++        byCity.put("Bogotá", orderRepository.countByStatusAndCity(OrderStatus.DELIVERED, "Bogotá"));
++        byCity.put("Medellín", orderRepository.countByStatusAndCity(OrderStatus.DELIVERED, "Medellín"));
+ 
+         return new DeliveryStatisticsDTO(today, week, month, byCity);
+     }
+@@ -149,18 +125,8 @@ public class AnalyticsService {
+      * Obtiene el ranking de los 5 repartidores más efectivos.
+      */
+     @Transactional(readOnly = true)
+-    public List<DriverRankingDTO> getEfficiencyRanking(String cityFilter) {
+-        String cleanCity = cityFilter;
+-        if (cleanCity == null || cleanCity.trim().isEmpty() || cleanCity.equalsIgnoreCase("undefined") || cleanCity.equalsIgnoreCase("Global")) {
+-            cleanCity = null;
+-        }
+-
+-        List<DriverRankingDTO> original;
+-        if (cleanCity != null) {
+-            original = orderRepository.getDriverRankingsByCity(cleanCity, PageRequest.of(0, 5));
+-        } else {
+-            original = orderRepository.getDriverRankings(PageRequest.of(0, 5));
+-        }
++    public List<DriverRankingDTO> getEfficiencyRanking() {
++        List<DriverRankingDTO> original = orderRepository.getDriverRankings(PageRequest.of(0, 5));
+ 
+         // Post-procesar para asignar tags/condecoraciones según posición
+         java.util.List<DriverRankingDTO> ranked = new java.util.ArrayList<>();
+diff --git a/src/main/java/com/routeoptimizer/service/BatchService.java b/src/main/java/com/routeoptimizer/service/BatchService.java
+index 5bd16ec..491fcec 100644
+--- a/src/main/java/com/routeoptimizer/service/BatchService.java
++++ b/src/main/java/com/routeoptimizer/service/BatchService.java
+@@ -262,14 +262,6 @@ public class BatchService {
+         return assignedCount;
+     }
+ 
+-    @Transactional(readOnly = true)
+-    public List<Batch> findAll(String cityFilter) {
+-        if (cityFilter != null && !cityFilter.trim().isEmpty() && !cityFilter.equalsIgnoreCase("Global")) {
+-            return batchRepository.findByCityIgnoreCase(cityFilter.trim());
+-        }
+-        return batchRepository.findAll();
+-    }
+-
+     @Transactional(readOnly = true)
+     public List<Batch> findAll() {
+         return batchRepository.findAll();
+diff --git a/src/main/java/com/routeoptimizer/service/DriverService.java b/src/main/java/com/routeoptimizer/service/DriverService.java
+index 22ba0b4..f191226 100644
+--- a/src/main/java/com/routeoptimizer/service/DriverService.java
++++ b/src/main/java/com/routeoptimizer/service/DriverService.java
+@@ -9,6 +9,7 @@ import com.routeoptimizer.repository.DriverRepository;
+ import com.routeoptimizer.repository.OrderRepository;
+ 
+ import org.springframework.context.annotation.Lazy;
++import org.springframework.security.crypto.password.PasswordEncoder;
+ import org.springframework.stereotype.Service;
+ import org.springframework.transaction.annotation.Transactional;
+ import jakarta.persistence.EntityManager;
+@@ -29,21 +30,28 @@ public class DriverService {
+   private final DriverRepository driverRepository;
+   private final BatchService batchService;
+   private final OrderRepository orderRepository;
++  private final PasswordEncoder passwordEncoder;
+ 
+   @PersistenceContext
+   private EntityManager entityManager;
+ 
+-  public DriverService(DriverRepository driverRepository, @Lazy BatchService batchService, OrderRepository orderRepository) {
++  public DriverService(DriverRepository driverRepository, @Lazy BatchService batchService,
++      OrderRepository orderRepository, PasswordEncoder passwordEncoder) {
+     this.driverRepository = driverRepository;
+     this.batchService = batchService;
+     this.orderRepository = orderRepository;
++    this.passwordEncoder = passwordEncoder;
+   }
+ 
+   @Transactional
+   public Driver createDriver(DriverCreateDTO dto) {
+     Driver driver = new Driver();
+     driver.setEmail(dto.getEmail());
+-    driver.setPasswordHash(dto.getPassword() != null ? dto.getPassword() : "defaultHash");
++    String rawPassword = dto.getPassword();
++    if (rawPassword == null || rawPassword.isBlank()) {
++      throw new IllegalArgumentException("La contraseña del conductor es obligatoria");
++    }
++    driver.setPasswordHash(passwordEncoder.encode(rawPassword));
+     driver.setName(dto.getName());
+     driver.setPhone(dto.getPhone());
+     driver.setRole(Role.DRIVER);
+@@ -55,14 +63,6 @@ public class DriverService {
+     return driverRepository.save(driver);
+   }
+ 
+-  @Transactional(readOnly = true)
+-  public List<Driver> findAll(String cityFilter) {
+-    if (cityFilter != null && !cityFilter.trim().isEmpty() && !cityFilter.equalsIgnoreCase("Global")) {
+-      return driverRepository.findByAssignedCityIgnoreCase(cityFilter.trim());
+-    }
+-    return driverRepository.findAll();
+-  }
+-
+   @Transactional(readOnly = true)
+   public List<Driver> findAll() {
+     return driverRepository.findAll();
+@@ -75,14 +75,6 @@ public class DriverService {
+         .orElseThrow(() -> new RuntimeException("Driver no encontrado con ID: " + id));
+   }
+ 
+-  @Transactional(readOnly = true)
+-  public List<Driver> findAvailable(String cityFilter) {
+-    if (cityFilter != null && !cityFilter.trim().isEmpty() && !cityFilter.equalsIgnoreCase("Global")) {
+-      return driverRepository.findByStatusAndAssignedCityIgnoreCase(DriverStatus.AVAILABLE, cityFilter.trim());
+-    }
+-    return driverRepository.findByStatus(DriverStatus.AVAILABLE);
+-  }
+-
+   @Transactional(readOnly = true)
+   public List<Driver> findAvailable() {
+     return driverRepository.findByStatus(DriverStatus.AVAILABLE);
+@@ -123,18 +115,13 @@ public class DriverService {
+   }
+ 
+   @Transactional
+-  public List<DriverResponseDTO> getFleetStatus(String cityFilter) {
++  public List<DriverResponseDTO> getFleetStatus() {
+     // SINCRONIZACIÓN FORZADA: Limpiar caché de primer nivel de Hibernate para leer la realidad de la DB
+     if (entityManager != null) {
+         entityManager.clear();
+     }
+     
+-    List<Driver> drivers;
+-    if (cityFilter != null && !cityFilter.trim().isEmpty() && !cityFilter.equalsIgnoreCase("Global")) {
+-      drivers = driverRepository.findByAssignedCityIgnoreCase(cityFilter.trim());
+-    } else {
+-      drivers = driverRepository.findAll();
+-    }
++    List<Driver> drivers = driverRepository.findAll();
+     java.time.LocalDateTime startOfDay = java.time.LocalDate.now().atStartOfDay();
+ 
+     List<DriverResponseDTO> result = new java.util.ArrayList<>();
+diff --git a/src/main/java/com/routeoptimizer/service/MapService.java b/src/main/java/com/routeoptimizer/service/MapService.java
+index ac7552f..ebbab67 100644
+--- a/src/main/java/com/routeoptimizer/service/MapService.java
++++ b/src/main/java/com/routeoptimizer/service/MapService.java
+@@ -26,9 +26,9 @@ public interface MapService {
+   List<String> suggestAddress(String text);
+ 
+   /**
+-   * Gets the distance matrix (in seconds/meters) between a list of points.
++   * Gets the distance matrix (in meters) between a list of points.
+    */
+-  long[][] getDistanceMatrix(List<Coordinate> points, String mode);
++  long[][] getDistanceMatrix(List<Coordinate> points);
+ 
+   /**
+    * Gets a traffic factor (0.0 to 1.0) for a specific city.
+diff --git a/src/main/java/com/routeoptimizer/service/OrderService.java b/src/main/java/com/routeoptimizer/service/OrderService.java
+index 7c34643..2c5dabc 100644
+--- a/src/main/java/com/routeoptimizer/service/OrderService.java
++++ b/src/main/java/com/routeoptimizer/service/OrderService.java
+@@ -79,6 +79,11 @@ public class OrderService {
+     return orderRepository.findAllWithDriver();
+   }
+ 
++  @Transactional(readOnly = true)
++  public List<Order> findByDriverId(Long driverId) {
++    return orderRepository.findByDriverId(driverId);
++  }
++
+   @Transactional(readOnly = true)
+   @SuppressWarnings("null")
+   public Order findById(Long id) {
+diff --git a/src/main/java/com/routeoptimizer/service/ReportService.java b/src/main/java/com/routeoptimizer/service/ReportService.java
+index 108a8eb..7187ee6 100644
+--- a/src/main/java/com/routeoptimizer/service/ReportService.java
++++ b/src/main/java/com/routeoptimizer/service/ReportService.java
+@@ -64,10 +64,6 @@ public class ReportService {
+     }
+ 
+     public byte[] generateOrdersReportExcel(String city) {
+-        return generateOrdersReportExcel(city, null, null, null);
+-    }
+-
+-    public byte[] generateOrdersReportExcel(String city, String status, String driver, String search) {
+         String targetCity = city;
+         
+         // AUTO-DETECCIÓN DE SEGURIDAD: Si el usuario es Logístico, forzamos su ciudad asignada
+@@ -95,43 +91,6 @@ public class ReportService {
+             sheetName = "Consolidado Nacional";
+         }
+ 
+-        // Aplicamos los filtros sincronizados de la UI
+-        if (status != null && !status.trim().isEmpty() && !status.equalsIgnoreCase("ALL")) {
+-            final String finalStatus = status.trim().toUpperCase();
+-            orders = orders.stream()
+-                .filter(o -> o.getStatus() != null && o.getStatus().name().equalsIgnoreCase(finalStatus))
+-                .collect(Collectors.toList());
+-        }
+-
+-        if (driver != null && !driver.trim().isEmpty() && !driver.equalsIgnoreCase("ALL")) {
+-            final String finalDriver = driver.trim();
+-            orders = orders.stream()
+-                .filter(o -> {
+-                    String driverName = "Sin Asignar";
+-                    if (o.getBatchId() != null) {
+-                        try {
+-                            var batch = batchService.findById(o.getBatchId());
+-                            if (batch != null && batch.getDriver() != null) {
+-                                driverName = batch.getDriver().getName();
+-                            }
+-                        } catch (Exception e) {}
+-                    }
+-                    return driverName.equalsIgnoreCase(finalDriver);
+-                })
+-                .collect(Collectors.toList());
+-        }
+-
+-        if (search != null && !search.trim().isEmpty()) {
+-            final String finalSearch = search.trim().toLowerCase();
+-            orders = orders.stream()
+-                .filter(o -> 
+-                    (o.getClientReference() != null && o.getClientReference().toLowerCase().contains(finalSearch)) ||
+-                    (o.getClientName() != null && o.getClientName().toLowerCase().contains(finalSearch)) ||
+-                    (o.getAddress() != null && o.getAddress().toLowerCase().contains(finalSearch))
+-                )
+-                .collect(Collectors.toList());
+-        }
+-
+         try (Workbook workbook = new XSSFWorkbook();
+              ByteArrayOutputStream out = new ByteArrayOutputStream()) {
+             
+@@ -190,10 +149,6 @@ public class ReportService {
+     }
+ 
+     public byte[] generateOrdersReportWord(String city) {
+-        return generateOrdersReportWord(city, null, null, null);
+-    }
+-
+-    public byte[] generateOrdersReportWord(String city, String status, String driver, String search) {
+         String targetCity = city;
+         
+         // AUTO-DETECCIÓN DE SEGURIDAD
+@@ -215,43 +170,6 @@ public class ReportService {
+         } else {
+             orders = orderRepository.findAll();
+         }
+-
+-        // Aplicamos los filtros sincronizados de la UI
+-        if (status != null && !status.trim().isEmpty() && !status.equalsIgnoreCase("ALL")) {
+-            final String finalStatus = status.trim().toUpperCase();
+-            orders = orders.stream()
+-                .filter(o -> o.getStatus() != null && o.getStatus().name().equalsIgnoreCase(finalStatus))
+-                .collect(Collectors.toList());
+-        }
+-
+-        if (driver != null && !driver.trim().isEmpty() && !driver.equalsIgnoreCase("ALL")) {
+-            final String finalDriver = driver.trim();
+-            orders = orders.stream()
+-                .filter(o -> {
+-                    String driverName = "Sin Asignar";
+-                    if (o.getBatchId() != null) {
+-                        try {
+-                            var batch = batchService.findById(o.getBatchId());
+-                            if (batch != null && batch.getDriver() != null) {
+-                                driverName = batch.getDriver().getName();
+-                            }
+-                        } catch (Exception e) {}
+-                    }
+-                    return driverName.equalsIgnoreCase(finalDriver);
+-                })
+-                .collect(Collectors.toList());
+-        }
+-
+-        if (search != null && !search.trim().isEmpty()) {
+-            final String finalSearch = search.trim().toLowerCase();
+-            orders = orders.stream()
+-                .filter(o -> 
+-                    (o.getClientReference() != null && o.getClientReference().toLowerCase().contains(finalSearch)) ||
+-                    (o.getClientName() != null && o.getClientName().toLowerCase().contains(finalSearch)) ||
+-                    (o.getAddress() != null && o.getAddress().toLowerCase().contains(finalSearch))
+-                )
+-                .collect(Collectors.toList());
+-        }
+         
+         try (XWPFDocument document = new XWPFDocument();
+              ByteArrayOutputStream out = new ByteArrayOutputStream()) {
+@@ -310,29 +228,17 @@ public class ReportService {
+     }
+ 
+     public byte[] generateGeneralReportWord(String city) {
+-        String targetCity = city;
+-        var auth = org.springframework.security.core.context.SecurityContextHolder.getContext().getAuthentication();
+-        if (auth != null && auth.getPrincipal() instanceof com.routeoptimizer.model.entity.User user) {
+-            if (user.getRole() == com.routeoptimizer.model.enums.Role.LOGISTICS) {
+-                targetCity = user.getAssignedCity();
+-            }
+-        }
+-        if (targetCity != null && (targetCity.trim().isEmpty() || targetCity.equalsIgnoreCase("undefined") || targetCity.equalsIgnoreCase("Global"))) {
+-            targetCity = null;
+-        }
+-
+-        var financials = analyticsService.getFinancialAnalytics(targetCity);
+-        var allRankings = analyticsService.getEfficiencyRanking(targetCity);
++        var financials = analyticsService.getFinancialAnalytics(city);
++        var allRankings = analyticsService.getEfficiencyRanking();
+         
+         // Filtrar ranking por ciudad si aplica
+         List<com.routeoptimizer.dto.DriverRankingDTO> ranking;
+-        if (targetCity != null && !targetCity.trim().isEmpty()) {
+-            final String finalCity = targetCity;
++        if (city != null && !city.trim().isEmpty()) {
+             // Buscamos conductores que tengan pedidos en esa ciudad
+             ranking = allRankings.stream()
+                 .filter(dr -> {
+                     // Verificación simple: si el conductor tiene pedidos en la ciudad
+-                    long count = orderRepository.countByStatusAndCity(com.routeoptimizer.model.enums.OrderStatus.DELIVERED, finalCity);
++                    long count = orderRepository.countByStatusAndCity(com.routeoptimizer.model.enums.OrderStatus.DELIVERED, city);
+                     return count > 0; // Simplificación para el ejemplo
+                 })
+                 .limit(3)
+@@ -345,10 +251,10 @@ public class ReportService {
+              ByteArrayOutputStream out = new ByteArrayOutputStream()) {
+             
+             // DETECCIÓN DE ROL PARA PERSONALIZACIÓN
+-            var reportAuth = org.springframework.security.core.context.SecurityContextHolder.getContext().getAuthentication();
++            var auth = org.springframework.security.core.context.SecurityContextHolder.getContext().getAuthentication();
+             com.routeoptimizer.model.enums.Role userRole = com.routeoptimizer.model.enums.Role.ADMIN;
+             String userName = "Administrador";
+-            if (reportAuth != null && reportAuth.getPrincipal() instanceof com.routeoptimizer.model.entity.User user) {
++            if (auth != null && auth.getPrincipal() instanceof com.routeoptimizer.model.entity.User user) {
+                 userRole = user.getRole();
+                 userName = user.getName();
+             }
+@@ -506,8 +412,27 @@ public class ReportService {
+                 .collect(Collectors.toList());
+         }
+ 
+-        // 3. Ranking filtrado directamente por ciudad en DB
+-        java.util.List<com.routeoptimizer.dto.DriverRankingDTO> filteredRanking = analyticsService.getEfficiencyRanking(finalCity);
++        // 3. Filtrado de Ranking (Solo conductores con actividad en esa ciudad)
++        java.util.List<com.routeoptimizer.dto.DriverRankingDTO> allRankings = analyticsService.getEfficiencyRanking();
++        java.util.List<com.routeoptimizer.dto.DriverRankingDTO> filteredRanking;
++        
++        if (finalCity != null) {
++            // Simplificación: mostramos conductores que tienen pedidos asignados en esa ciudad
++            filteredRanking = allRankings.stream()
++                .filter(dr -> filteredOrders.stream().anyMatch(o -> {
++                    String dName = "Sin Asignar";
++                    if (o.getBatchId() != null) {
++                        try {
++                            var batch = batchService.findById(o.getBatchId());
++                            if (batch != null && batch.getDriver() != null) dName = batch.getDriver().getName();
++                        } catch (Exception e) {}
++                    }
++                    return dName.equalsIgnoreCase(dr.driverName());
++                }))
++                .collect(Collectors.toList());
++        } else {
++            filteredRanking = allRankings;
++        }
+ 
+         try (ByteArrayOutputStream out = new ByteArrayOutputStream()) {
+             Document document = new Document(PageSize.A4);
+diff --git a/src/main/java/com/routeoptimizer/service/SmartDispatchService.java b/src/main/java/com/routeoptimizer/service/SmartDispatchService.java
+index 5e44dce..0495c56 100644
+--- a/src/main/java/com/routeoptimizer/service/SmartDispatchService.java
++++ b/src/main/java/com/routeoptimizer/service/SmartDispatchService.java
+@@ -41,7 +41,7 @@ public class SmartDispatchService {
+         log.info("Generating Smart Dispatch Plan for city: {}", city);
+ 
+         // SINCRONIZACIÓN PREVIA: Forzamos la limpieza de conductores antes de calcular el plan
+-        driverService.getFleetStatus(city);
++        driverService.getFleetStatus();
+ 
+         List<Order> allPending = orderRepository.findByStatus(OrderStatus.PENDING);
+         
+@@ -86,7 +86,7 @@ public class SmartDispatchService {
+         log.info("City drivers for '{}': {} total", finalCity, cityDrivers.size());
+ 
+         // SINCRONIZACIÓN DINÁMICA: Usamos el estado real de la flota para garantizar datos frescos
+-        List<com.routeoptimizer.dto.DriverResponseDTO> fleetStatus = driverService.getFleetStatus(finalCity);
++        List<com.routeoptimizer.dto.DriverResponseDTO> fleetStatus = driverService.getFleetStatus();
+         
+         List<Driver> availableDrivers = cityDrivers.stream()
+                 .filter(d -> fleetStatus.stream()

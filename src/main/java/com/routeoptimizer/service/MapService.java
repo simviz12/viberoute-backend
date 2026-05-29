@@ -26,9 +26,9 @@ public interface MapService {
   List<String> suggestAddress(String text);
 
   /**
-   * Gets the distance matrix (in meters) between a list of points.
+   * Gets the distance matrix (in seconds/meters) between a list of points.
    */
-  long[][] getDistanceMatrix(List<Coordinate> points);
+  long[][] getDistanceMatrix(List<Coordinate> points, String mode);
 
   /**
    * Gets a traffic factor (0.0 to 1.0) for a specific city.

@@ -12,6 +12,8 @@ import java.util.UUID;
 
 @Repository
 public interface BatchRepository extends JpaRepository<Batch, Long> {
+    List<Batch> findByCityIgnoreCase(String city);
+
     List<Batch> findByStatus(String status);
 
     List<Batch> findByCreationDate(LocalDate date);

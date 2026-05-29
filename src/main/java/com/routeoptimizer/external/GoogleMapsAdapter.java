@@ -144,12 +144,12 @@ public class GoogleMapsAdapter implements MapService {
   }
 
   @Override
-  public long[][] getDistanceMatrix(List<Coordinate> points) {
+  public long[][] getDistanceMatrix(List<Coordinate> points, String mode) {
     int n = points.size();
     long[][] matrix = new long[n][n];
 
     if (apiKey == null || apiKey.isEmpty() || n <= 1) {
-      log.warn("Google Maps API Key not detected. Calculating Euclidean distances for optimization.");
+      log.warn("Google Maps API Key not detected. Calculating Euclidean travel time (seconds) for optimization.");
       for (int i = 0; i < n; i++) {
         for (int j = 0; j < n; j++) {
           if (i == j) {
@@ -161,9 +161,9 @@ public class GoogleMapsAdapter implements MapService {
             if (p1 == null || p2 == null || p1.getLat() == null || p2.getLat() == null) {
                 matrix[i][j] = 999999;
             } else {
-                // Simple Euclidean distance (approximate meters)
+                // Simple Euclidean distance (approximate meters) / 8.33 m/s (approx 30km/h) = seconds
                 double d = Math.sqrt(Math.pow(p1.getLat() - p2.getLat(), 2) + Math.pow(p1.getLng() - p2.getLng(), 2)) * 111320;
-                matrix[i][j] = (long) d;
+                matrix[i][j] = (long) (d / 8.33); 
             }
           }
         }
@@ -179,13 +179,22 @@ public class GoogleMapsAdapter implements MapService {
     }
     String pointsString = sb.toString();
 
-    String url = UriComponentsBuilder.fromHttpUrl("https://maps.googleapis.com/maps/api/distancematrix/json")
+    // [HOTFIX] TOGGLE DE TRÁFICO: Solo inyectamos tráfico real si el modo es PRIORITY
+    // Esto ahorra costos significativos (Tier Standard vs Tier Advanced en Google Cloud)
+    UriComponentsBuilder builder = UriComponentsBuilder.fromHttpUrl("https://maps.googleapis.com/maps/api/distancematrix/json")
         .queryParam("origins", pointsString)
         .queryParam("destinations", pointsString)
-        .queryParam("key", apiKey)
-        .build()
-        .encode()
-        .toUriString();
+        .queryParam("key", apiKey);
+
+    if ("PRIORITY".equalsIgnoreCase(mode)) {
+        builder.queryParam("departure_time", "now")
+               .queryParam("traffic_model", "best_guess");
+        log.info("🚀 TRAFFIC MODE ENABLED (Tier Advanced Billing)");
+    } else {
+        log.info("🌿 EFFICIENCY MODE ENABLED (Tier Standard Billing)");
+    }
+
+    String url = builder.build().encode().toUriString();
 
     try {
       JsonNode response = restTemplate.getForObject(url, JsonNode.class);
@@ -196,7 +205,12 @@ public class GoogleMapsAdapter implements MapService {
           for (int j = 0; j < n; j++) {
             JsonNode element = elements.get(j);
             if ("OK".equals(element.path("status").asText())) {
-              matrix[i][j] = element.path("distance").path("value").asLong();
+              // [FASE 3] OPTIMIZACIÓN POR TIEMPO: Usamos duration_in_traffic si está disponible
+              if (element.has("duration_in_traffic")) {
+                  matrix[i][j] = element.path("duration_in_traffic").path("value").asLong();
+              } else {
+                  matrix[i][j] = element.path("duration").path("value").asLong();
+              }
             } else {
               matrix[i][j] = 999999; // Penalty for invalid route
             }
@@ -207,10 +221,10 @@ public class GoogleMapsAdapter implements MapService {
         log.warn("Google Maps API returned {}. Falling back to Euclidean.", response != null ? response.path("status").asText() : "null");
       }
     } catch (Exception e) {
-      log.error("Error getting distance matrix: {}", e.getMessage());
+      log.error("Error getting distance matrix with traffic: {}", e.getMessage());
     }
 
-    log.warn("Calculating Euclidean distances for optimization as fallback.");
+    log.warn("Calculating Euclidean travel time for optimization as fallback.");
     for (int i = 0; i < n; i++) {
       for (int j = 0; j < n; j++) {
         if (i == j) {
@@ -222,7 +236,7 @@ public class GoogleMapsAdapter implements MapService {
               matrix[i][j] = 999999;
           } else {
               double d = Math.sqrt(Math.pow(p1.getLat() - p2.getLat(), 2) + Math.pow(p1.getLng() - p2.getLng(), 2)) * 111320;
-              matrix[i][j] = (long) d;
+              matrix[i][j] = (long) (d / 8.33); // 30km/h avg
           }
         }
       }

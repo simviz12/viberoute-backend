@@ -9,7 +9,7 @@ import org.springframework.security.core.authority.SimpleGrantedAuthority;
 import org.springframework.security.core.userdetails.UserDetails;
 
 import org.hibernate.annotations.SQLDelete;
-import org.hibernate.annotations.Where;
+import org.hibernate.annotations.SQLRestriction;
 
 import java.util.Collection;
 import java.util.List;
@@ -21,8 +21,10 @@ import java.util.List;
 @Entity
 @Table(name = "users")
 @Inheritance(strategy = InheritanceType.JOINED)
+@DiscriminatorColumn(name = "user_type", discriminatorType = DiscriminatorType.STRING)
+@DiscriminatorValue("USER")
 @SQLDelete(sql = "UPDATE users SET enabled = false WHERE id = ?")
-@Where(clause = "enabled = true")
+@SQLRestriction("enabled = true")
 public class User implements UserDetails {
 
   @Id

@@ -38,9 +38,14 @@ public class AnalyticsService {
      */
     @Transactional(readOnly = true)
     public com.routeoptimizer.dto.FinancialAnalyticsDTO getFinancialAnalytics(String cityFilter) {
+        String cleanCity = cityFilter;
+        if (cleanCity == null || cleanCity.trim().isEmpty() || cleanCity.equalsIgnoreCase("undefined") || cleanCity.equalsIgnoreCase("Global")) {
+            cleanCity = null;
+        }
+
         java.math.BigDecimal revenue;
-        if (cityFilter != null && !cityFilter.isEmpty()) {
-            revenue = orderRepository.getRevenueByCity(cityFilter);
+        if (cleanCity != null) {
+            revenue = orderRepository.getRevenueByCity(cleanCity);
         } else {
             revenue = orderRepository.getTotalRevenue();
         }
@@ -58,8 +63,8 @@ public class AnalyticsService {
                 if (driverOpt.isPresent()) {
                     com.routeoptimizer.model.entity.Driver d = driverOpt.get();
                     // Si hay filtro de ciudad, solo sumamos costos de conductores de esa ciudad
-                    if (cityFilter != null && !cityFilter.isEmpty()
-                            && !cityFilter.equalsIgnoreCase(d.getAssignedCity())) {
+                    if (cleanCity != null
+                            && !cleanCity.equalsIgnoreCase(d.getAssignedCity())) {
                         continue;
                     }
                     java.math.BigDecimal costPerHour = d.getCostPerHour() != null ? d.getCostPerHour()
@@ -83,7 +88,7 @@ public class AnalyticsService {
         }
 
         Map<String, java.math.BigDecimal> monthlyRevenue = new HashMap<>();
-        List<Object[]> monthlyData = orderRepository.getMonthlyRevenueNative(cityFilter);
+        List<Object[]> monthlyData = orderRepository.getMonthlyRevenueNative(cleanCity);
         for (Object[] row : monthlyData) {
             String month = (String) row[0];
             Object rawTotal = row[1];
@@ -104,19 +109,38 @@ public class AnalyticsService {
      * Calculates successful deliveries comparing different time periods.
      */
     @Transactional(readOnly = true)
-    public DeliveryStatisticsDTO getDeliveryStatistics() {
+    public DeliveryStatisticsDTO getDeliveryStatistics(String cityFilter) {
+        String cleanCity = cityFilter;
+        if (cleanCity == null || cleanCity.trim().isEmpty() || cleanCity.equalsIgnoreCase("undefined") || cleanCity.equalsIgnoreCase("Global")) {
+            cleanCity = null;
+        }
+
         LocalDateTime todayStart = LocalDateTime.now().with(LocalTime.MIN);
         LocalDateTime weekStart = LocalDateTime.now().minusWeeks(1);
         LocalDateTime monthStart = LocalDateTime.now().minusMonths(1);
 
-        long today = orderRepository.countSuccessfulDeliveriesSince(todayStart);
-        long week = orderRepository.countSuccessfulDeliveriesSince(weekStart);
-        long month = orderRepository.countSuccessfulDeliveriesSince(monthStart);
+        long today;
+        long week;
+        long month;
+
+        if (cleanCity != null) {
+            today = orderRepository.countSuccessfulDeliveriesSinceAndCity(todayStart, cleanCity);
+            week = orderRepository.countSuccessfulDeliveriesSinceAndCity(weekStart, cleanCity);
+            month = orderRepository.countSuccessfulDeliveriesSinceAndCity(monthStart, cleanCity);
+        } else {
+            today = orderRepository.countSuccessfulDeliveriesSince(todayStart);
+            week = orderRepository.countSuccessfulDeliveriesSince(weekStart);
+            month = orderRepository.countSuccessfulDeliveriesSince(monthStart);
+        }
 
         Map<String, Long> byCity = new HashMap<>();
-        byCity.put("Pasto", orderRepository.countByStatusAndCity(OrderStatus.DELIVERED, "Pasto"));
-        byCity.put("Bogotá", orderRepository.countByStatusAndCity(OrderStatus.DELIVERED, "Bogotá"));
-        byCity.put("Medellín", orderRepository.countByStatusAndCity(OrderStatus.DELIVERED, "Medellín"));
+        if (cleanCity != null) {
+            byCity.put(cleanCity, orderRepository.countByStatusAndCity(OrderStatus.DELIVERED, cleanCity));
+        } else {
+            byCity.put("Pasto", orderRepository.countByStatusAndCity(OrderStatus.DELIVERED, "Pasto"));
+            byCity.put("Bogotá", orderRepository.countByStatusAndCity(OrderStatus.DELIVERED, "Bogotá"));
+            byCity.put("Medellín", orderRepository.countByStatusAndCity(OrderStatus.DELIVERED, "Medellín"));
+        }
 
         return new DeliveryStatisticsDTO(today, week, month, byCity);
     }
@@ -125,8 +149,18 @@ public class AnalyticsService {
      * Obtiene el ranking de los 5 repartidores más efectivos.
      */
     @Transactional(readOnly = true)
-    public List<DriverRankingDTO> getEfficiencyRanking() {
-        List<DriverRankingDTO> original = orderRepository.getDriverRankings(PageRequest.of(0, 5));
+    public List<DriverRankingDTO> getEfficiencyRanking(String cityFilter) {
+        String cleanCity = cityFilter;
+        if (cleanCity == null || cleanCity.trim().isEmpty() || cleanCity.equalsIgnoreCase("undefined") || cleanCity.equalsIgnoreCase("Global")) {
+            cleanCity = null;
+        }
+
+        List<DriverRankingDTO> original;
+        if (cleanCity != null) {
+            original = orderRepository.getDriverRankingsByCity(cleanCity, PageRequest.of(0, 5));
+        } else {
+            original = orderRepository.getDriverRankings(PageRequest.of(0, 5));
+        }
 
         // Post-procesar para asignar tags/condecoraciones según posición
         java.util.List<DriverRankingDTO> ranked = new java.util.ArrayList<>();

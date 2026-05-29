@@ -8,15 +8,13 @@ import org.springframework.messaging.simp.stomp.StompCommand;
 import org.springframework.messaging.simp.stomp.StompHeaderAccessor;
 import org.springframework.messaging.support.ChannelInterceptor;
 import org.springframework.messaging.support.MessageHeaderAccessor;
+import org.springframework.security.access.AccessDeniedException;
 import org.springframework.security.authentication.UsernamePasswordAuthenticationToken;
 import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.security.core.userdetails.UserDetails;
 import org.springframework.security.core.userdetails.UserDetailsService;
 import org.springframework.stereotype.Component;
 
-/**
- * Valida el JWT en el frame STOMP CONNECT antes de permitir suscripciones.
- */
 @Component
 public class WebSocketAuthChannelInterceptor implements ChannelInterceptor {
 
@@ -37,24 +35,25 @@ public class WebSocketAuthChannelInterceptor implements ChannelInterceptor {
 
         String authHeader = accessor.getFirstNativeHeader("Authorization");
         if (authHeader == null || !authHeader.startsWith("Bearer ")) {
-            throw new org.springframework.security.access.AccessDeniedException("Token JWT requerido para WebSocket");
+            throw new AccessDeniedException("Token JWT requerido para WebSocket");
         }
 
-        String jwt = authHeader.substring(7);
         try {
+            String jwt = authHeader.substring(7);
             String userEmail = jwtService.extractUsername(jwt);
             UserDetails userDetails = userDetailsService.loadUserByUsername(userEmail);
             if (!jwtService.isTokenValid(jwt, userDetails)) {
-                throw new org.springframework.security.access.AccessDeniedException("Token JWT inválido o expirado");
+                throw new AccessDeniedException("Token JWT invalido o expirado");
             }
+
             UsernamePasswordAuthenticationToken authToken = new UsernamePasswordAuthenticationToken(
                     userDetails, null, userDetails.getAuthorities());
             accessor.setUser(authToken);
             SecurityContextHolder.getContext().setAuthentication(authToken);
-        } catch (org.springframework.security.access.AccessDeniedException e) {
+        } catch (AccessDeniedException e) {
             throw e;
         } catch (Exception e) {
-            throw new org.springframework.security.access.AccessDeniedException("Autenticación WebSocket fallida");
+            throw new AccessDeniedException("Autenticacion WebSocket fallida");
         }
 
         return message;

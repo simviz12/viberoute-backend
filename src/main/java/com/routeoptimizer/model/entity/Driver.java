@@ -11,6 +11,7 @@ import jakarta.persistence.*;
  */
 @Entity
 @Table(name = "drivers")
+@DiscriminatorValue("DRIVER")
 public class Driver extends User {
 
   @Embedded
