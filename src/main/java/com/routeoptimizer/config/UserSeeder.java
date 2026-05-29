@@ -41,7 +41,6 @@ public class UserSeeder implements CommandLineRunner {
         try {
             System.out.println("\n" + "=".repeat(60));
             System.out.println("🛡️ [SECURITY] Iniciando sincronización de cuenta maestra...");
-            System.out.println("📧 [SYNC] Email detectado: " + adminEmail);
             System.out.println("=".repeat(60));
 
             // PASO 1: Eliminar restricción de base de datos que bloquea SUPER_ADMIN
@@ -58,11 +57,10 @@ public class UserSeeder implements CommandLineRunner {
             userRepository.findByEmail(adminEmail).ifPresentOrElse(
                     user -> {
                         user.setRole(Role.SUPER_ADMIN);
-                        user.setPasswordHash(hashedMasterPass);
                         user.setName("Arquitecto Maestro (VibeRoute)");
                         user.setAssignedCity("Global");
                         userRepository.save(user);
-                        System.out.println("✅ [SYNC] Cuenta maestra ACTUALIZADA con credenciales del .env.");
+                        System.out.println("✅ [SYNC] Cuenta maestra verificada (contraseña no modificada).");
                     },
                     () -> {
                         User superAdmin = new User();

@@ -9,6 +9,7 @@ import com.routeoptimizer.repository.DriverRepository;
 import com.routeoptimizer.repository.OrderRepository;
 
 import org.springframework.context.annotation.Lazy;
+import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import jakarta.persistence.EntityManager;
@@ -29,21 +30,28 @@ public class DriverService {
   private final DriverRepository driverRepository;
   private final BatchService batchService;
   private final OrderRepository orderRepository;
+  private final PasswordEncoder passwordEncoder;
 
   @PersistenceContext
   private EntityManager entityManager;
 
-  public DriverService(DriverRepository driverRepository, @Lazy BatchService batchService, OrderRepository orderRepository) {
+  public DriverService(DriverRepository driverRepository, @Lazy BatchService batchService,
+      OrderRepository orderRepository, PasswordEncoder passwordEncoder) {
     this.driverRepository = driverRepository;
     this.batchService = batchService;
     this.orderRepository = orderRepository;
+    this.passwordEncoder = passwordEncoder;
   }
 
   @Transactional
   public Driver createDriver(DriverCreateDTO dto) {
     Driver driver = new Driver();
     driver.setEmail(dto.getEmail());
-    driver.setPasswordHash(dto.getPassword() != null ? dto.getPassword() : "defaultHash");
+    String rawPassword = dto.getPassword();
+    if (rawPassword == null || rawPassword.isBlank()) {
+      throw new IllegalArgumentException("La contraseña del conductor es obligatoria");
+    }
+    driver.setPasswordHash(passwordEncoder.encode(rawPassword));
     driver.setName(dto.getName());
     driver.setPhone(dto.getPhone());
     driver.setRole(Role.DRIVER);

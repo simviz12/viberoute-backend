@@ -14,7 +14,6 @@ import java.util.List;
 import java.util.Map;
 import java.util.stream.Collectors;
 
-@CrossOrigin(origins = "*")
 @RestController
 @RequestMapping({"/api/v1/orders", "/orders"})
 public class OrderController {
@@ -36,13 +35,28 @@ public class OrderController {
     }
   }
 
+  @GetMapping("/mine")
+  public ResponseEntity<List<OrderResponseDTO>> listMine() {
+    var auth = org.springframework.security.core.context.SecurityContextHolder.getContext().getAuthentication();
+    if (auth == null || !(auth.getPrincipal() instanceof com.routeoptimizer.model.entity.User user)
+        || user.getRole() != com.routeoptimizer.model.enums.Role.DRIVER) {
+      return ResponseEntity.status(HttpStatus.FORBIDDEN).build();
+    }
+    List<OrderResponseDTO> orders = orderService.findByDriverId(user.getId()).stream()
+        .map(orderService::enrichOrderResponse)
+        .collect(Collectors.toList());
+    return ResponseEntity.ok(orders);
+  }
+
   @GetMapping
   public ResponseEntity<List<OrderResponseDTO>> listAll(@RequestParam(required = false) String city) {
     String filterCity = city;
     
-    // AISLAMIENTO REGIONAL: Forzar filtro por ciudad si el usuario es Logístico
     var auth = org.springframework.security.core.context.SecurityContextHolder.getContext().getAuthentication();
     if (auth != null && auth.getPrincipal() instanceof com.routeoptimizer.model.entity.User user) {
+        if (user.getRole() == com.routeoptimizer.model.enums.Role.DRIVER) {
+            return ResponseEntity.status(HttpStatus.FORBIDDEN).build();
+        }
         if (user.getRole() == com.routeoptimizer.model.enums.Role.LOGISTICS) {
             filterCity = user.getAssignedCity();
         }

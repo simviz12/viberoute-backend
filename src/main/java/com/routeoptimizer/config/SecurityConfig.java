@@ -46,6 +46,7 @@ public class SecurityConfig {
         .csrf(AbstractHttpConfigurer::disable)
         .authorizeHttpRequests(auth -> auth
             .requestMatchers("/api/v1/auth/login", "/api/v1/auth/reset-password", "/api/v1/ping", "/error", "/ws-alertas/**", "/auth/login").permitAll()
+            // Handshake SockJS público; el JWT se valida en STOMP CONNECT (WebSocketAuthChannelInterceptor)
             .requestMatchers("/api/v1/auth/register", "/auth/register").hasAnyRole("SUPER_ADMIN", "ADMIN", "LOGISTICS")
             .requestMatchers("/api/v1/system/**", "/system/**").hasRole("SUPER_ADMIN")
             
@@ -75,8 +76,7 @@ public class SecurityConfig {
             .authenticationEntryPoint(jwtAuthenticationEntryPoint)
             .accessDeniedHandler(customAccessDeniedHandler))
         .authenticationProvider(authenticationProvider)
-        .addFilterBefore(jwtAuthFilter, UsernamePasswordAuthenticationFilter.class)
-        .cors(cors -> cors.configurationSource(corsConfigurationSource()));
+        .addFilterBefore(jwtAuthFilter, UsernamePasswordAuthenticationFilter.class);
 
     return http.build();
   }
@@ -85,7 +85,11 @@ public class SecurityConfig {
   public org.springframework.web.cors.CorsConfigurationSource corsConfigurationSource() {
     org.springframework.web.cors.CorsConfiguration configuration = new org.springframework.web.cors.CorsConfiguration();
     // Restringir a dominios específicos en producción. Para desarrollo, listamos los permitidos explícitamente.
-    configuration.setAllowedOrigins(java.util.List.of("http://localhost:3000", "http://127.0.0.1:3000")); 
+    configuration.setAllowedOrigins(java.util.List.of(
+        "http://localhost:3000",
+        "http://127.0.0.1:3000",
+        "http://localhost:5173",
+        "http://127.0.0.1:5173")); 
     configuration.setAllowedMethods(java.util.List.of("GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"));
     configuration.setAllowedHeaders(java.util.List.of("Authorization", "Content-Type", "X-Requested-With", "Accept", "Origin"));
     configuration.setExposedHeaders(java.util.List.of("Authorization"));

@@ -11,7 +11,6 @@ import java.util.Map;
  * Controlador que recibe los "pings" de ubicación del celular del repartidor
  * y alimenta al servicio de WebSockets de Colisiones.
  */
-@CrossOrigin(origins = "*")
 @RestController
 @RequestMapping({"/api/v1/locations", "/locations"})
 public class LocationController {

@@ -14,7 +14,6 @@ import org.springframework.security.access.prepost.PreAuthorize;
 /**
  * Controlador para gestionar el registro y la autenticación de usuarios.
  */
-@CrossOrigin(origins = "*")
 @RestController
 @RequestMapping({"/api/v1/auth", "/auth"})
 public class AuthController {

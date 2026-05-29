@@ -12,7 +12,6 @@ import java.util.List;
 /**
  * Controlador para exponer las métricas y analíticas del sistema.
  */
-@CrossOrigin(origins = "*")
 @RestController
 @RequestMapping({"/api/v1/stats", "/stats"})
 public class AnalyticsController {
