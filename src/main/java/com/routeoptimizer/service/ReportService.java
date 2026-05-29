@@ -345,10 +345,10 @@ public class ReportService {
              ByteArrayOutputStream out = new ByteArrayOutputStream()) {
             
             // DETECCIÓN DE ROL PARA PERSONALIZACIÓN
-            var auth = org.springframework.security.core.context.SecurityContextHolder.getContext().getAuthentication();
+            var reportAuth = org.springframework.security.core.context.SecurityContextHolder.getContext().getAuthentication();
             com.routeoptimizer.model.enums.Role userRole = com.routeoptimizer.model.enums.Role.ADMIN;
             String userName = "Administrador";
-            if (auth != null && auth.getPrincipal() instanceof com.routeoptimizer.model.entity.User user) {
+            if (reportAuth != null && reportAuth.getPrincipal() instanceof com.routeoptimizer.model.entity.User user) {
                 userRole = user.getRole();
                 userName = user.getName();
             }

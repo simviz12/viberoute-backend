@@ -41,7 +41,7 @@ public class SmartDispatchService {
         log.info("Generating Smart Dispatch Plan for city: {}", city);
 
         // SINCRONIZACIÓN PREVIA: Forzamos la limpieza de conductores antes de calcular el plan
-        driverService.getFleetStatus();
+        driverService.getFleetStatus(city);
 
         List<Order> allPending = orderRepository.findByStatus(OrderStatus.PENDING);
         
@@ -86,7 +86,7 @@ public class SmartDispatchService {
         log.info("City drivers for '{}': {} total", finalCity, cityDrivers.size());
 
         // SINCRONIZACIÓN DINÁMICA: Usamos el estado real de la flota para garantizar datos frescos
-        List<com.routeoptimizer.dto.DriverResponseDTO> fleetStatus = driverService.getFleetStatus();
+        List<com.routeoptimizer.dto.DriverResponseDTO> fleetStatus = driverService.getFleetStatus(finalCity);
         
         List<Driver> availableDrivers = cityDrivers.stream()
                 .filter(d -> fleetStatus.stream()
