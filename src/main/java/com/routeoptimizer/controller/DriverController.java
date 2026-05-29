@@ -5,10 +5,13 @@ import com.routeoptimizer.dto.DriverResponseDTO;
 import com.routeoptimizer.model.Coordinate;
 import com.routeoptimizer.model.enums.DriverStatus;
 import com.routeoptimizer.model.entity.Driver;
+import com.routeoptimizer.model.entity.User;
+import com.routeoptimizer.model.enums.Role;
 import com.routeoptimizer.service.DriverService;
 
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
+import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.web.bind.annotation.*;
 
 import java.util.List;
@@ -34,16 +37,18 @@ public class DriverController {
   }
 
   @GetMapping
-  public ResponseEntity<List<DriverResponseDTO>> listAll() {
-    List<DriverResponseDTO> drivers = driverService.findAll().stream()
+  public ResponseEntity<List<DriverResponseDTO>> listAll(@RequestParam(required = false) String city) {
+    String cityFilter = resolveCity(city);
+    List<DriverResponseDTO> drivers = driverService.findAll(cityFilter).stream()
         .map(DriverResponseDTO::fromEntity)
         .collect(Collectors.toList());
     return ResponseEntity.ok(drivers);
   }
 
   @GetMapping("/available")
-  public ResponseEntity<List<DriverResponseDTO>> listAvailable() {
-    List<DriverResponseDTO> available = driverService.findAvailable().stream()
+  public ResponseEntity<List<DriverResponseDTO>> listAvailable(@RequestParam(required = false) String city) {
+    String cityFilter = resolveCity(city);
+    List<DriverResponseDTO> available = driverService.findAvailable(cityFilter).stream()
         .map(DriverResponseDTO::fromEntity)
         .collect(Collectors.toList());
     return ResponseEntity.ok(available);
@@ -51,19 +56,31 @@ public class DriverController {
 
   @GetMapping("/{id}")
   public ResponseEntity<DriverResponseDTO> getDriver(@PathVariable Long id) {
-    return ResponseEntity.ok(DriverResponseDTO.fromEntity(driverService.findById(id)));
+    Driver driver = driverService.findById(id);
+    if (isForbiddenForLogistics(driver.getAssignedCity())) {
+      return ResponseEntity.status(HttpStatus.FORBIDDEN).build();
+    }
+    return ResponseEntity.ok(DriverResponseDTO.fromEntity(driver));
   }
 
   @PatchMapping("/{id}/status")
   public ResponseEntity<DriverResponseDTO> changeStatus(
       @PathVariable Long id,
       @RequestParam DriverStatus status) {
+    Driver existing = driverService.findById(id);
+    if (isForbiddenForLogistics(existing.getAssignedCity())) {
+      return ResponseEntity.status(HttpStatus.FORBIDDEN).build();
+    }
     Driver updated = driverService.changeStatus(id, status);
     return ResponseEntity.ok(DriverResponseDTO.fromEntity(updated));
   }
 
   @PostMapping("/{id}/assign-to-batch")
   public ResponseEntity<DriverResponseDTO> assignToBatch(@PathVariable Long id) {
+    Driver existing = driverService.findById(id);
+    if (isForbiddenForLogistics(existing.getAssignedCity())) {
+      return ResponseEntity.status(HttpStatus.FORBIDDEN).build();
+    }
     Driver driver = driverService.assignDriverToBatch(id);
     return ResponseEntity.ok(DriverResponseDTO.fromEntity(driver));
   }
@@ -72,13 +89,40 @@ public class DriverController {
   public ResponseEntity<DriverResponseDTO> updateLocation(
       @PathVariable Long id,
       @RequestBody Coordinate location) {
+    Driver existing = driverService.findById(id);
+    if (isForbiddenForLogistics(existing.getAssignedCity())) {
+      return ResponseEntity.status(HttpStatus.FORBIDDEN).build();
+    }
     Driver updated = driverService.updateLocation(id, location);
     return ResponseEntity.ok(DriverResponseDTO.fromEntity(updated));
   }
 
   @GetMapping("/fleet-status")
-  public ResponseEntity<List<DriverResponseDTO>> getFleetStatus() {
-    return ResponseEntity.ok(driverService.getFleetStatus());
+  public ResponseEntity<List<DriverResponseDTO>> getFleetStatus(@RequestParam(required = false) String city) {
+    String cityFilter = resolveCity(city);
+    return ResponseEntity.ok(driverService.getFleetStatus(cityFilter));
+  }
+
+  private String resolveCity(String requestedCity) {
+    User user = authenticatedUser();
+    if (user != null) {
+      if (user.getRole() == Role.LOGISTICS) {
+        return user.getAssignedCity();
+      }
+    }
+    return requestedCity;
+  }
+
+  private boolean isForbiddenForLogistics(String resourceCity) {
+    User user = authenticatedUser();
+    return user != null
+        && user.getRole() == Role.LOGISTICS
+        && (resourceCity == null || !resourceCity.equalsIgnoreCase(user.getAssignedCity()));
+  }
+
+  private User authenticatedUser() {
+    var auth = SecurityContextHolder.getContext().getAuthentication();
+    return auth != null && auth.getPrincipal() instanceof User user ? user : null;
   }
 
   @GetMapping("/debug-all")

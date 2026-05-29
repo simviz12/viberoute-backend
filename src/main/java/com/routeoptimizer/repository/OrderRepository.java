@@ -50,6 +50,9 @@ public interface OrderRepository extends JpaRepository<Order, Long> {
     @Query("SELECT COUNT(o) FROM Order o WHERE o.status = com.routeoptimizer.model.enums.OrderStatus.DELIVERED AND o.actualDeliveryTime >= :start")
     long countSuccessfulDeliveriesSince(@Param("start") java.time.LocalDateTime start);
 
+    @Query("SELECT COUNT(o) FROM Order o WHERE o.status = com.routeoptimizer.model.enums.OrderStatus.DELIVERED AND o.actualDeliveryTime >= :start AND o.city = :city")
+    long countSuccessfulDeliveriesSinceAndCity(@Param("start") java.time.LocalDateTime start, @Param("city") String city);
+
     @Query("SELECT new com.routeoptimizer.dto.DriverRankingDTO(" +
             "r.name, " +
             "SUM(CASE WHEN o.status = com.routeoptimizer.model.enums.OrderStatus.DELIVERED THEN 1L ELSE 0L END), " +
@@ -62,6 +65,22 @@ public interface OrderRepository extends JpaRepository<Order, Long> {
             "GROUP BY r.name " +
             "ORDER BY SUM(CASE WHEN o.status = com.routeoptimizer.model.enums.OrderStatus.DELIVERED THEN 1L ELSE 0L END) DESC")
     List<com.routeoptimizer.dto.DriverRankingDTO> getDriverRankings(
+            org.springframework.data.domain.Pageable pageable);
+
+    @Query("SELECT new com.routeoptimizer.dto.DriverRankingDTO(" +
+            "r.name, " +
+            "SUM(CASE WHEN o.status = com.routeoptimizer.model.enums.OrderStatus.DELIVERED THEN 1L ELSE 0L END), " +
+            "(SUM(CASE WHEN o.status = com.routeoptimizer.model.enums.OrderStatus.DELIVERED THEN 1.0 ELSE 0.0 END) / COUNT(o)) * 100.0, "
+            +
+            "'') " +
+            "FROM Order o JOIN Batch b ON o.batchId = b.id JOIN b.driver r " +
+            "WHERE o.status IN (com.routeoptimizer.model.enums.OrderStatus.DELIVERED, com.routeoptimizer.model.enums.OrderStatus.RETURNED, com.routeoptimizer.model.enums.OrderStatus.CANCELLED) "
+            +
+            "AND o.city = :city " +
+            "GROUP BY r.name " +
+            "ORDER BY SUM(CASE WHEN o.status = com.routeoptimizer.model.enums.OrderStatus.DELIVERED THEN 1L ELSE 0L END) DESC")
+    List<com.routeoptimizer.dto.DriverRankingDTO> getDriverRankingsByCity(
+            @Param("city") String city,
             org.springframework.data.domain.Pageable pageable);
 
     @Query("SELECT SUM(o.price) FROM Order o WHERE o.status = com.routeoptimizer.model.enums.OrderStatus.DELIVERED")

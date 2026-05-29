@@ -3,11 +3,14 @@ package com.routeoptimizer.controller;
 import com.routeoptimizer.dto.OrderCreateDTO;
 import com.routeoptimizer.dto.OrderResponseDTO;
 import com.routeoptimizer.model.entity.Order;
+import com.routeoptimizer.model.entity.User;
 import com.routeoptimizer.model.enums.OrderStatus;
+import com.routeoptimizer.model.enums.Role;
 import com.routeoptimizer.service.OrderService;
 
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
+import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.web.bind.annotation.*;
 
 import java.util.List;
@@ -37,7 +40,7 @@ public class OrderController {
 
   @GetMapping
   public ResponseEntity<List<OrderResponseDTO>> listAll(@RequestParam(required = false) String city) {
-    String filterCity = city;
+    String filterCity = resolveCity(city);
     
     // AISLAMIENTO REGIONAL: Forzar filtro por ciudad si el usuario es Logístico
     var auth = org.springframework.security.core.context.SecurityContextHolder.getContext().getAuthentication();
@@ -62,7 +65,7 @@ public class OrderController {
 
   @GetMapping("/pending")
   public ResponseEntity<List<OrderResponseDTO>> listPendingWithoutBatch(@RequestParam(required = false) String city) {
-    String searchCity = city;
+    String searchCity = resolveCity(city);
     
     // Auto-filtro por ciudad si el usuario es Logístico y no especificó ciudad
     var auth = org.springframework.security.core.context.SecurityContextHolder.getContext().getAuthentication();
@@ -81,6 +84,9 @@ public class OrderController {
   @GetMapping("/{id}")
   public ResponseEntity<OrderResponseDTO> getOrder(@PathVariable Long id) {
     Order order = orderService.findById(id);
+    if (isForbiddenForLogistics(order.getCity())) {
+      return ResponseEntity.status(HttpStatus.FORBIDDEN).build();
+    }
     return ResponseEntity.ok(orderService.enrichOrderResponse(order));
   }
 
@@ -90,6 +96,10 @@ public class OrderController {
       @RequestParam OrderStatus status,
       @RequestParam(required = false) String reason) {
     try {
+      Order existing = orderService.findById(id);
+      if (isForbiddenForLogistics(existing.getCity())) {
+        return ResponseEntity.status(HttpStatus.FORBIDDEN).build();
+      }
       Order updated = orderService.updateStatus(id, status, reason);
       return ResponseEntity.ok(orderService.enrichOrderResponse(updated));
     } catch (IllegalStateException e) {
@@ -100,7 +110,20 @@ public class OrderController {
   }
 
   @GetMapping("/city/{city}")
-  public ResponseEntity<List<OrderResponseDTO>> listByCity(@PathVariable String city) {
+  public ResponseEntity<?> listByCity(@PathVariable String city) {
+    if (isForbiddenForLogistics(city)) {
+      return ResponseEntity.status(HttpStatus.FORBIDDEN).build();
+    }
+    // SEGURIDAD: Rechazar acceso cross-city para usuarios LOGISTICS
+    var auth = org.springframework.security.core.context.SecurityContextHolder.getContext().getAuthentication();
+    if (auth != null && auth.getPrincipal() instanceof com.routeoptimizer.model.entity.User user) {
+      if (user.getRole() == com.routeoptimizer.model.enums.Role.LOGISTICS) {
+        if (!city.equalsIgnoreCase(user.getAssignedCity())) {
+          return ResponseEntity.status(org.springframework.http.HttpStatus.FORBIDDEN)
+              .body(Map.of("error", "No tiene autorización para consultar pedidos de la ciudad: " + city));
+        }
+      }
+    }
     List<OrderResponseDTO> orders = orderService.findByCity(city).stream()
         .map(orderService::enrichOrderResponse)
         .collect(Collectors.toList());
@@ -111,6 +134,9 @@ public class OrderController {
   public ResponseEntity<Map<String, Object>> getCountByStatusAndCity(
       @PathVariable String city,
       @RequestParam OrderStatus status) {
+    if (isForbiddenForLogistics(city)) {
+      return ResponseEntity.status(HttpStatus.FORBIDDEN).build();
+    }
     long count = orderService.countByStatusAndCity(status, city);
     return ResponseEntity.ok(Map.of(
         "city", city,
@@ -150,10 +176,34 @@ public class OrderController {
   @DeleteMapping("/{id}")
   public ResponseEntity<?> deleteOrder(@PathVariable Long id) {
     try {
+      Order existing = orderService.findById(id);
+      if (isForbiddenForLogistics(existing.getCity())) {
+        return ResponseEntity.status(HttpStatus.FORBIDDEN).build();
+      }
       orderService.deleteOrder(id);
       return ResponseEntity.ok(Map.of("message", "Pedido eliminado correctamente"));
     } catch (RuntimeException e) {
       return ResponseEntity.status(HttpStatus.NOT_FOUND).body(Map.of("error", e.getMessage()));
     }
+  }
+
+  private String resolveCity(String requestedCity) {
+    User user = authenticatedUser();
+    if (user != null && user.getRole() == Role.LOGISTICS) {
+      return user.getAssignedCity();
+    }
+    return requestedCity;
+  }
+
+  private boolean isForbiddenForLogistics(String resourceCity) {
+    User user = authenticatedUser();
+    return user != null
+        && user.getRole() == Role.LOGISTICS
+        && (resourceCity == null || !resourceCity.equalsIgnoreCase(user.getAssignedCity()));
+  }
+
+  private User authenticatedUser() {
+    var auth = SecurityContextHolder.getContext().getAuthentication();
+    return auth != null && auth.getPrincipal() instanceof User user ? user : null;
   }
 }

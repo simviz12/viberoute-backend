@@ -263,6 +263,14 @@ public class BatchService {
     }
 
     @Transactional(readOnly = true)
+    public List<Batch> findAll(String cityFilter) {
+        if (cityFilter != null && !cityFilter.trim().isEmpty() && !cityFilter.equalsIgnoreCase("Global")) {
+            return batchRepository.findByCityIgnoreCase(cityFilter.trim());
+        }
+        return batchRepository.findAll();
+    }
+
+    @Transactional(readOnly = true)
     public List<Batch> findAll() {
         return batchRepository.findAll();
     }

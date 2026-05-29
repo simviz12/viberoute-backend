@@ -6,12 +6,17 @@ import java.util.stream.Collectors;
 
 import com.routeoptimizer.dto.OrderResponseDTO;
 import com.routeoptimizer.model.entity.Batch;
+import com.routeoptimizer.model.entity.User;
+import com.routeoptimizer.model.enums.Role;
 import com.routeoptimizer.model.entity.Route;
 import com.routeoptimizer.repository.OrderRepository;
 import com.routeoptimizer.service.BatchService;
+import com.routeoptimizer.service.DriverService;
 import com.routeoptimizer.service.RouteService;
 import org.springframework.transaction.annotation.Transactional;
+import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
+import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.web.bind.annotation.*;
 
 @RestController
@@ -22,13 +27,16 @@ public class BatchController {
     private final RouteService routeService;
     private final com.routeoptimizer.service.SmartDispatchService smartDispatchService;
     private final OrderRepository orderRepository;
+    private final DriverService driverService;
 
     public BatchController(BatchService batchService, RouteService routeService,
-            com.routeoptimizer.service.SmartDispatchService smartDispatchService, OrderRepository orderRepository) {
+            com.routeoptimizer.service.SmartDispatchService smartDispatchService, OrderRepository orderRepository,
+            DriverService driverService) {
         this.batchService = batchService;
         this.routeService = routeService;
         this.smartDispatchService = smartDispatchService;
         this.orderRepository = orderRepository;
+        this.driverService = driverService;
     }
 
     /**
@@ -38,9 +46,11 @@ public class BatchController {
      */
     @GetMapping
     @Transactional(readOnly = true)
-    public ResponseEntity<?> listAll() {
+    public ResponseEntity<?> listAll(@RequestParam(required = false) String city) {
         try {
-            List<Map<String, Object>> safeBatches = batchService.findAll().stream()
+            String cityFilter = resolveCity(city);
+
+            List<Map<String, Object>> safeBatches = batchService.findAll(cityFilter).stream()
                     .map(batchService::convertToSafeMap)
                     .collect(Collectors.toList());
             return ResponseEntity.ok(safeBatches);
@@ -55,6 +65,9 @@ public class BatchController {
             Batch batch = batchService.findById(id);
             if (batch == null)
                 return ResponseEntity.noContent().build();
+            if (isForbiddenForLogistics(batch.getCity())) {
+                return ResponseEntity.status(HttpStatus.FORBIDDEN).build();
+            }
 
             // Mapeamos los pedidos iterativamente a DTOs en línea (Map) para evitar LazyInitializationException
             List<Map<String, Object>> safeOrders = List.of();
@@ -102,6 +115,10 @@ public class BatchController {
         Double lng = body != null ? (Double) body.get("lng") : null;
         String mode = body != null ? (String) body.get("mode") : "EFFICIENCY";
 
+        Batch batch = batchService.findById(id);
+        if (isForbiddenForLogistics(batch.getCity())) {
+            return ResponseEntity.status(HttpStatus.FORBIDDEN).build();
+        }
         return ResponseEntity.ok(routeService.optimizeAndSaveRoute(id, lat, lng, mode));
     }
 
@@ -109,7 +126,8 @@ public class BatchController {
     @Transactional(readOnly = true)
     public ResponseEntity<List<Map<String, Object>>> getPendingBatches(
             @org.springframework.web.bind.annotation.RequestParam(required = false) String city) {
-        List<Map<String, Object>> safeBatches = batchService.getPendingBatches(city).stream()
+        String cityFilter = resolveCity(city);
+        List<Map<String, Object>> safeBatches = batchService.getPendingBatches(cityFilter).stream()
                 .map(batchService::convertToSafeMap)
                 .collect(Collectors.toList());
         return ResponseEntity.ok(safeBatches);
@@ -120,6 +138,10 @@ public class BatchController {
     public ResponseEntity<Map<String, Object>> updateManifest(@PathVariable Long id,
             @org.springframework.web.bind.annotation.RequestBody Map<String, String> body) {
         String manifestUrl = body.get("manifestUrl");
+        Batch existing = batchService.findById(id);
+        if (isForbiddenForLogistics(existing.getCity())) {
+            return ResponseEntity.status(HttpStatus.FORBIDDEN).build();
+        }
         Batch batch = batchService.updateManifestUrl(id, manifestUrl);
         return ResponseEntity.ok(batchService.convertToSafeMap(batch));
     }
@@ -131,7 +153,7 @@ public class BatchController {
         @SuppressWarnings("unchecked")
         List<Integer> idsRaw = (List<Integer>) body.get("orderIds");
         List<Long> orderIds = idsRaw.stream().map(Integer::longValue).collect(Collectors.toList());
-        String city = (String) body.get("city");
+        String city = resolveCity((String) body.get("city"));
         Batch batch = batchService.createManualBatch(orderIds, city);
         return ResponseEntity.ok(batchService.convertToSafeMap(batch));
     }
@@ -140,6 +162,14 @@ public class BatchController {
     @Transactional
     public ResponseEntity<Map<String, Object>> assignDriverToBatch(@PathVariable Long batchId,
             @PathVariable Long driverId) {
+        Batch existing = batchService.findById(batchId);
+        if (isForbiddenForLogistics(existing.getCity())) {
+            return ResponseEntity.status(HttpStatus.FORBIDDEN).build();
+        }
+        var driver = driverService.findById(driverId);
+        if (isForbiddenForLogistics(driver.getAssignedCity())) {
+            return ResponseEntity.status(HttpStatus.FORBIDDEN).build();
+        }
         Batch batch = batchService.assignDriverToBatch(batchId, driverId);
         return ResponseEntity.ok(batchService.convertToSafeMap(batch));
     }
@@ -147,7 +177,8 @@ public class BatchController {
     @GetMapping("/smart-dispatch/suggest")
     public ResponseEntity<com.routeoptimizer.dto.SmartDispatchPlanDTO> suggestSmartDispatch(
             @RequestParam(required = false) String city) {
-        return ResponseEntity.ok(smartDispatchService.suggestDispatchPlan(city));
+        String cityFilter = resolveCity(city);
+        return ResponseEntity.ok(smartDispatchService.suggestDispatchPlan(cityFilter));
     }
 
     @PostMapping("/smart-dispatch/apply")
@@ -178,6 +209,9 @@ public class BatchController {
                     }
                 } catch (Exception ignore) {
                 }
+                if (isForbiddenForLogistics(city)) {
+                    return ResponseEntity.status(HttpStatus.FORBIDDEN).build();
+                }
 
                 com.routeoptimizer.model.entity.Batch newBatch = batchService.createManualBatch(orderIds, city);
                 if (driverId != null) {
@@ -193,5 +227,25 @@ public class BatchController {
             return ResponseEntity.badRequest()
                     .body(Map.of("status", "error", "message", "Error al aplicar el plan: " + e.getMessage()));
         }
+    }
+
+    private String resolveCity(String requestedCity) {
+        User user = authenticatedUser();
+        if (user != null && user.getRole() == Role.LOGISTICS) {
+            return user.getAssignedCity();
+        }
+        return requestedCity;
+    }
+
+    private boolean isForbiddenForLogistics(String resourceCity) {
+        User user = authenticatedUser();
+        return user != null
+                && user.getRole() == Role.LOGISTICS
+                && (resourceCity == null || !resourceCity.equalsIgnoreCase(user.getAssignedCity()));
+    }
+
+    private User authenticatedUser() {
+        var auth = SecurityContextHolder.getContext().getAuthentication();
+        return auth != null && auth.getPrincipal() instanceof User user ? user : null;
     }
 }
