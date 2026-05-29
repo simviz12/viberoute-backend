@@ -10,7 +10,9 @@ import org.springframework.web.socket.config.annotation.EnableWebSocketMessageBr
 import org.springframework.web.socket.config.annotation.StompEndpointRegistry;
 import org.springframework.web.socket.config.annotation.WebSocketMessageBrokerConfigurer;
 
+import java.util.ArrayList;
 import java.util.Arrays;
+import java.util.List;
 
 @Configuration
 @EnableWebSocketMessageBroker
@@ -33,13 +35,18 @@ public class WebSocketConfig implements WebSocketMessageBrokerConfigurer {
 
     @Override
     public void registerStompEndpoints(@NonNull StompEndpointRegistry registry) {
-        String[] origins = Arrays.stream(allowedOriginsRaw.split(","))
+        List<String> origins = new ArrayList<>(Arrays.stream(allowedOriginsRaw.split(","))
                 .map(String::trim)
                 .filter(s -> !s.isEmpty())
-                .toArray(String[]::new);
+                .toList());
+
+        String vercelDomain = "https://vibe-route-colombia-frontend.vercel.app";
+        if (!origins.contains(vercelDomain)) {
+            origins.add(vercelDomain);
+        }
 
         registry.addEndpoint("/ws-alertas")
-                .setAllowedOrigins(origins)
+                .setAllowedOrigins(origins.toArray(String[]::new))
                 .withSockJS();
     }
 
