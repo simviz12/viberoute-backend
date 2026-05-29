@@ -33,15 +33,15 @@ public interface OrderRepository extends JpaRepository<Order, Long> {
     @Query("SELECT o FROM Order o WHERE o.batchId IS NULL AND o.city = :city")
     List<Order> findByBatchIdIsNullAndCity(@Param("city") String city);
 
-    @Query(value = "SELECT * FROM orders o WHERE ST_DWithin(" +
-            "CAST(ST_SetSRID(ST_MakePoint(o.lng, o.lat), 4326) AS geography), " + // Wait, should it
-                                                                                  // correspond to lng
-                                                                                  // and
-                                                                                  // lat?
+    @Query(value = "SELECT * FROM orders o WHERE o.location_lat IS NOT NULL AND o.location_lng IS NOT NULL AND ST_DWithin(" +
+            "CAST(ST_SetSRID(ST_MakePoint(o.location_lng, o.location_lat), 4326) AS geography), " +
             "CAST(ST_SetSRID(ST_MakePoint(:lng, :lat), 4326) AS geography), " +
             ":radiusMeters)", nativeQuery = true)
     List<Order> findNearbyOrders(@Param("lat") double lat, @Param("lng") double lng,
             @Param("radiusMeters") double radiusMeters);
+
+    @Query("SELECT o FROM Order o JOIN Batch b ON o.batchId = b.id WHERE b.driver.id = :driverId")
+    List<Order> findByDriverId(@Param("driverId") Long driverId);
 
     List<Order> findByCity(String city);
 

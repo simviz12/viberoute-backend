@@ -47,7 +47,7 @@ public class SecurityConfig {
    * Orígenes CORS permitidos, inyectados desde la variable de entorno.
    * Usamos el nombre VIBEROUTE_CORS_ALLOWED_ORIGINS especificado.
    */
-  @Value("${VIBEROUTE_CORS_ALLOWED_ORIGINS:http://localhost:3000,http://127.0.0.1:3000}")
+  @Value("${VIBEROUTE_CORS_ALLOWED_ORIGINS:http://localhost:3000,http://127.0.0.1:3000,http://localhost:5173,http://127.0.0.1:5173}")
   private String allowedOriginsRaw;
 
   public SecurityConfig(JwtAuthenticationFilter jwtAuthFilter, 

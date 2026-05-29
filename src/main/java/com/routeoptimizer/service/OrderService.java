@@ -80,6 +80,11 @@ public class OrderService {
   }
 
   @Transactional(readOnly = true)
+  public List<Order> findByDriverId(Long driverId) {
+    return orderRepository.findByDriverId(driverId);
+  }
+
+  @Transactional(readOnly = true)
   @SuppressWarnings("null")
   public Order findById(Long id) {
     return orderRepository.findById(id)

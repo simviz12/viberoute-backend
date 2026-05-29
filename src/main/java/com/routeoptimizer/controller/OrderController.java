@@ -38,23 +38,32 @@ public class OrderController {
     }
   }
 
-  @GetMapping
-  public ResponseEntity<List<OrderResponseDTO>> listAll(@RequestParam(required = false) String city) {
-    String filterCity = resolveCity(city);
-    
-    // AISLAMIENTO REGIONAL: Forzar filtro por ciudad si el usuario es Logístico
-    var auth = org.springframework.security.core.context.SecurityContextHolder.getContext().getAuthentication();
-    if (auth != null && auth.getPrincipal() instanceof com.routeoptimizer.model.entity.User user) {
-        if (user.getRole() == com.routeoptimizer.model.enums.Role.LOGISTICS) {
-            filterCity = user.getAssignedCity();
-        }
+  @GetMapping("/mine")
+  public ResponseEntity<List<OrderResponseDTO>> listMine() {
+    User user = authenticatedUser();
+    if (user == null || user.getRole() != Role.DRIVER) {
+      return ResponseEntity.status(HttpStatus.FORBIDDEN).build();
     }
 
+    List<OrderResponseDTO> orders = orderService.findByDriverId(user.getId()).stream()
+        .map(orderService::enrichOrderResponse)
+        .collect(Collectors.toList());
+    return ResponseEntity.ok(orders);
+  }
+
+  @GetMapping
+  public ResponseEntity<List<OrderResponseDTO>> listAll(@RequestParam(required = false) String city) {
+    User user = authenticatedUser();
+    if (user != null && user.getRole() == Role.DRIVER) {
+      return ResponseEntity.status(HttpStatus.FORBIDDEN).build();
+    }
+
+    String filterCity = resolveCity(city);
     List<Order> rawOrders;
     if (filterCity != null && !filterCity.isEmpty()) {
-        rawOrders = orderService.findByCity(filterCity);
+      rawOrders = orderService.findByCity(filterCity);
     } else {
-        rawOrders = orderService.findAll();
+      rawOrders = orderService.findAll();
     }
 
     List<OrderResponseDTO> orders = rawOrders.stream()
@@ -66,14 +75,6 @@ public class OrderController {
   @GetMapping("/pending")
   public ResponseEntity<List<OrderResponseDTO>> listPendingWithoutBatch(@RequestParam(required = false) String city) {
     String searchCity = resolveCity(city);
-    
-    // Auto-filtro por ciudad si el usuario es Logístico y no especificó ciudad
-    var auth = org.springframework.security.core.context.SecurityContextHolder.getContext().getAuthentication();
-    if (auth != null && auth.getPrincipal() instanceof com.routeoptimizer.model.entity.User user) {
-        if (user.getRole() == com.routeoptimizer.model.enums.Role.LOGISTICS && (searchCity == null || searchCity.isEmpty())) {
-            searchCity = user.getAssignedCity();
-        }
-    }
 
     List<OrderResponseDTO> orders = orderService.findPendingWithoutBatch(searchCity).stream()
         .map(orderService::enrichOrderResponse)
@@ -84,7 +85,7 @@ public class OrderController {
   @GetMapping("/{id}")
   public ResponseEntity<OrderResponseDTO> getOrder(@PathVariable Long id) {
     Order order = orderService.findById(id);
-    if (isForbiddenForLogistics(order.getCity())) {
+    if (isForbiddenForLogistics(order.getCity()) || isForbiddenForDriver(order.getId())) {
       return ResponseEntity.status(HttpStatus.FORBIDDEN).build();
     }
     return ResponseEntity.ok(orderService.enrichOrderResponse(order));
@@ -97,7 +98,7 @@ public class OrderController {
       @RequestParam(required = false) String reason) {
     try {
       Order existing = orderService.findById(id);
-      if (isForbiddenForLogistics(existing.getCity())) {
+      if (isForbiddenForLogistics(existing.getCity()) || isForbiddenForDriver(existing.getId())) {
         return ResponseEntity.status(HttpStatus.FORBIDDEN).build();
       }
       Order updated = orderService.updateStatus(id, status, reason);
@@ -113,16 +114,6 @@ public class OrderController {
   public ResponseEntity<?> listByCity(@PathVariable String city) {
     if (isForbiddenForLogistics(city)) {
       return ResponseEntity.status(HttpStatus.FORBIDDEN).build();
-    }
-    // SEGURIDAD: Rechazar acceso cross-city para usuarios LOGISTICS
-    var auth = org.springframework.security.core.context.SecurityContextHolder.getContext().getAuthentication();
-    if (auth != null && auth.getPrincipal() instanceof com.routeoptimizer.model.entity.User user) {
-      if (user.getRole() == com.routeoptimizer.model.enums.Role.LOGISTICS) {
-        if (!city.equalsIgnoreCase(user.getAssignedCity())) {
-          return ResponseEntity.status(org.springframework.http.HttpStatus.FORBIDDEN)
-              .body(Map.of("error", "No tiene autorización para consultar pedidos de la ciudad: " + city));
-        }
-      }
     }
     List<OrderResponseDTO> orders = orderService.findByCity(city).stream()
         .map(orderService::enrichOrderResponse)
@@ -200,6 +191,13 @@ public class OrderController {
     return user != null
         && user.getRole() == Role.LOGISTICS
         && (resourceCity == null || !resourceCity.equalsIgnoreCase(user.getAssignedCity()));
+  }
+
+  private boolean isForbiddenForDriver(Long orderId) {
+    User user = authenticatedUser();
+    return user != null
+        && user.getRole() == Role.DRIVER
+        && orderService.findByDriverId(user.getId()).stream().noneMatch(order -> order.getId().equals(orderId));
   }
 
   private User authenticatedUser() {
