@@ -56,6 +56,14 @@ public class DriverService {
   }
 
   @Transactional(readOnly = true)
+  public List<Driver> findAll(String cityFilter) {
+    if (cityFilter != null && !cityFilter.trim().isEmpty() && !cityFilter.equalsIgnoreCase("Global")) {
+      return driverRepository.findByAssignedCityIgnoreCase(cityFilter.trim());
+    }
+    return driverRepository.findAll();
+  }
+
+  @Transactional(readOnly = true)
   public List<Driver> findAll() {
     return driverRepository.findAll();
   }
@@ -65,6 +73,14 @@ public class DriverService {
   public Driver findById(Long id) {
     return driverRepository.findById(id)
         .orElseThrow(() -> new RuntimeException("Driver no encontrado con ID: " + id));
+  }
+
+  @Transactional(readOnly = true)
+  public List<Driver> findAvailable(String cityFilter) {
+    if (cityFilter != null && !cityFilter.trim().isEmpty() && !cityFilter.equalsIgnoreCase("Global")) {
+      return driverRepository.findByStatusAndAssignedCityIgnoreCase(DriverStatus.AVAILABLE, cityFilter.trim());
+    }
+    return driverRepository.findByStatus(DriverStatus.AVAILABLE);
   }
 
   @Transactional(readOnly = true)
@@ -107,13 +123,18 @@ public class DriverService {
   }
 
   @Transactional
-  public List<DriverResponseDTO> getFleetStatus() {
+  public List<DriverResponseDTO> getFleetStatus(String cityFilter) {
     // SINCRONIZACIÓN FORZADA: Limpiar caché de primer nivel de Hibernate para leer la realidad de la DB
     if (entityManager != null) {
         entityManager.clear();
     }
     
-    List<Driver> drivers = driverRepository.findAll();
+    List<Driver> drivers;
+    if (cityFilter != null && !cityFilter.trim().isEmpty() && !cityFilter.equalsIgnoreCase("Global")) {
+      drivers = driverRepository.findByAssignedCityIgnoreCase(cityFilter.trim());
+    } else {
+      drivers = driverRepository.findAll();
+    }
     java.time.LocalDateTime startOfDay = java.time.LocalDate.now().atStartOfDay();
 
     List<DriverResponseDTO> result = new java.util.ArrayList<>();

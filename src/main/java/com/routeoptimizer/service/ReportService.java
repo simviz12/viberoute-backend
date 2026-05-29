@@ -64,6 +64,10 @@ public class ReportService {
     }
 
     public byte[] generateOrdersReportExcel(String city) {
+        return generateOrdersReportExcel(city, null, null, null);
+    }
+
+    public byte[] generateOrdersReportExcel(String city, String status, String driver, String search) {
         String targetCity = city;
         
         // AUTO-DETECCIÓN DE SEGURIDAD: Si el usuario es Logístico, forzamos su ciudad asignada
@@ -89,6 +93,43 @@ public class ReportService {
             // Solo llegamos aquí si el usuario es ADMIN y no eligió ciudad.
             orders = orderRepository.findAll();
             sheetName = "Consolidado Nacional";
+        }
+
+        // Aplicamos los filtros sincronizados de la UI
+        if (status != null && !status.trim().isEmpty() && !status.equalsIgnoreCase("ALL")) {
+            final String finalStatus = status.trim().toUpperCase();
+            orders = orders.stream()
+                .filter(o -> o.getStatus() != null && o.getStatus().name().equalsIgnoreCase(finalStatus))
+                .collect(Collectors.toList());
+        }
+
+        if (driver != null && !driver.trim().isEmpty() && !driver.equalsIgnoreCase("ALL")) {
+            final String finalDriver = driver.trim();
+            orders = orders.stream()
+                .filter(o -> {
+                    String driverName = "Sin Asignar";
+                    if (o.getBatchId() != null) {
+                        try {
+                            var batch = batchService.findById(o.getBatchId());
+                            if (batch != null && batch.getDriver() != null) {
+                                driverName = batch.getDriver().getName();
+                            }
+                        } catch (Exception e) {}
+                    }
+                    return driverName.equalsIgnoreCase(finalDriver);
+                })
+                .collect(Collectors.toList());
+        }
+
+        if (search != null && !search.trim().isEmpty()) {
+            final String finalSearch = search.trim().toLowerCase();
+            orders = orders.stream()
+                .filter(o -> 
+                    (o.getClientReference() != null && o.getClientReference().toLowerCase().contains(finalSearch)) ||
+                    (o.getClientName() != null && o.getClientName().toLowerCase().contains(finalSearch)) ||
+                    (o.getAddress() != null && o.getAddress().toLowerCase().contains(finalSearch))
+                )
+                .collect(Collectors.toList());
         }
 
         try (Workbook workbook = new XSSFWorkbook();
@@ -149,6 +190,10 @@ public class ReportService {
     }
 
     public byte[] generateOrdersReportWord(String city) {
+        return generateOrdersReportWord(city, null, null, null);
+    }
+
+    public byte[] generateOrdersReportWord(String city, String status, String driver, String search) {
         String targetCity = city;
         
         // AUTO-DETECCIÓN DE SEGURIDAD
@@ -169,6 +214,43 @@ public class ReportService {
                 .collect(Collectors.toList());
         } else {
             orders = orderRepository.findAll();
+        }
+
+        // Aplicamos los filtros sincronizados de la UI
+        if (status != null && !status.trim().isEmpty() && !status.equalsIgnoreCase("ALL")) {
+            final String finalStatus = status.trim().toUpperCase();
+            orders = orders.stream()
+                .filter(o -> o.getStatus() != null && o.getStatus().name().equalsIgnoreCase(finalStatus))
+                .collect(Collectors.toList());
+        }
+
+        if (driver != null && !driver.trim().isEmpty() && !driver.equalsIgnoreCase("ALL")) {
+            final String finalDriver = driver.trim();
+            orders = orders.stream()
+                .filter(o -> {
+                    String driverName = "Sin Asignar";
+                    if (o.getBatchId() != null) {
+                        try {
+                            var batch = batchService.findById(o.getBatchId());
+                            if (batch != null && batch.getDriver() != null) {
+                                driverName = batch.getDriver().getName();
+                            }
+                        } catch (Exception e) {}
+                    }
+                    return driverName.equalsIgnoreCase(finalDriver);
+                })
+                .collect(Collectors.toList());
+        }
+
+        if (search != null && !search.trim().isEmpty()) {
+            final String finalSearch = search.trim().toLowerCase();
+            orders = orders.stream()
+                .filter(o -> 
+                    (o.getClientReference() != null && o.getClientReference().toLowerCase().contains(finalSearch)) ||
+                    (o.getClientName() != null && o.getClientName().toLowerCase().contains(finalSearch)) ||
+                    (o.getAddress() != null && o.getAddress().toLowerCase().contains(finalSearch))
+                )
+                .collect(Collectors.toList());
         }
         
         try (XWPFDocument document = new XWPFDocument();
@@ -228,17 +310,29 @@ public class ReportService {
     }
 
     public byte[] generateGeneralReportWord(String city) {
-        var financials = analyticsService.getFinancialAnalytics(city);
-        var allRankings = analyticsService.getEfficiencyRanking();
+        String targetCity = city;
+        var auth = org.springframework.security.core.context.SecurityContextHolder.getContext().getAuthentication();
+        if (auth != null && auth.getPrincipal() instanceof com.routeoptimizer.model.entity.User user) {
+            if (user.getRole() == com.routeoptimizer.model.enums.Role.LOGISTICS) {
+                targetCity = user.getAssignedCity();
+            }
+        }
+        if (targetCity != null && (targetCity.trim().isEmpty() || targetCity.equalsIgnoreCase("undefined") || targetCity.equalsIgnoreCase("Global"))) {
+            targetCity = null;
+        }
+
+        var financials = analyticsService.getFinancialAnalytics(targetCity);
+        var allRankings = analyticsService.getEfficiencyRanking(targetCity);
         
         // Filtrar ranking por ciudad si aplica
         List<com.routeoptimizer.dto.DriverRankingDTO> ranking;
-        if (city != null && !city.trim().isEmpty()) {
+        if (targetCity != null && !targetCity.trim().isEmpty()) {
+            final String finalCity = targetCity;
             // Buscamos conductores que tengan pedidos en esa ciudad
             ranking = allRankings.stream()
                 .filter(dr -> {
                     // Verificación simple: si el conductor tiene pedidos en la ciudad
-                    long count = orderRepository.countByStatusAndCity(com.routeoptimizer.model.enums.OrderStatus.DELIVERED, city);
+                    long count = orderRepository.countByStatusAndCity(com.routeoptimizer.model.enums.OrderStatus.DELIVERED, finalCity);
                     return count > 0; // Simplificación para el ejemplo
                 })
                 .limit(3)
@@ -412,27 +506,8 @@ public class ReportService {
                 .collect(Collectors.toList());
         }
 
-        // 3. Filtrado de Ranking (Solo conductores con actividad en esa ciudad)
-        java.util.List<com.routeoptimizer.dto.DriverRankingDTO> allRankings = analyticsService.getEfficiencyRanking();
-        java.util.List<com.routeoptimizer.dto.DriverRankingDTO> filteredRanking;
-        
-        if (finalCity != null) {
-            // Simplificación: mostramos conductores que tienen pedidos asignados en esa ciudad
-            filteredRanking = allRankings.stream()
-                .filter(dr -> filteredOrders.stream().anyMatch(o -> {
-                    String dName = "Sin Asignar";
-                    if (o.getBatchId() != null) {
-                        try {
-                            var batch = batchService.findById(o.getBatchId());
-                            if (batch != null && batch.getDriver() != null) dName = batch.getDriver().getName();
-                        } catch (Exception e) {}
-                    }
-                    return dName.equalsIgnoreCase(dr.driverName());
-                }))
-                .collect(Collectors.toList());
-        } else {
-            filteredRanking = allRankings;
-        }
+        // 3. Ranking filtrado directamente por ciudad en DB
+        java.util.List<com.routeoptimizer.dto.DriverRankingDTO> filteredRanking = analyticsService.getEfficiencyRanking(finalCity);
 
         try (ByteArrayOutputStream out = new ByteArrayOutputStream()) {
             Document document = new Document(PageSize.A4);

@@ -100,7 +100,17 @@ public class OrderController {
   }
 
   @GetMapping("/city/{city}")
-  public ResponseEntity<List<OrderResponseDTO>> listByCity(@PathVariable String city) {
+  public ResponseEntity<?> listByCity(@PathVariable String city) {
+    // SEGURIDAD: Rechazar acceso cross-city para usuarios LOGISTICS
+    var auth = org.springframework.security.core.context.SecurityContextHolder.getContext().getAuthentication();
+    if (auth != null && auth.getPrincipal() instanceof com.routeoptimizer.model.entity.User user) {
+      if (user.getRole() == com.routeoptimizer.model.enums.Role.LOGISTICS) {
+        if (!city.equalsIgnoreCase(user.getAssignedCity())) {
+          return ResponseEntity.status(org.springframework.http.HttpStatus.FORBIDDEN)
+              .body(Map.of("error", "No tiene autorización para consultar pedidos de la ciudad: " + city));
+        }
+      }
+    }
     List<OrderResponseDTO> orders = orderService.findByCity(city).stream()
         .map(orderService::enrichOrderResponse)
         .collect(Collectors.toList());

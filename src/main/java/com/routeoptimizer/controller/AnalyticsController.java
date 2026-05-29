@@ -26,16 +26,33 @@ public class AnalyticsController {
      * Obtiene el resumen de entregas (Hoy, Semana, Mes).
      */
     @GetMapping("/delivery-summary")
-    public ResponseEntity<DeliveryStatisticsDTO> getDeliverySummary() {
-        return ResponseEntity.ok(analyticsService.getDeliveryStatistics());
+    public ResponseEntity<DeliveryStatisticsDTO> getDeliverySummary(
+            @RequestParam(required = false) String city) {
+        String cityFilter = resolveCity(city);
+        return ResponseEntity.ok(analyticsService.getDeliveryStatistics(cityFilter));
     }
 
     /**
      * Obtiene el Top 5 de repartidores más efectivos.
      */
     @GetMapping("/driver-ranking")
-    public ResponseEntity<List<DriverRankingDTO>> getDriverRanking() {
-        return ResponseEntity.ok(analyticsService.getEfficiencyRanking());
+    public ResponseEntity<List<DriverRankingDTO>> getDriverRanking(
+            @RequestParam(required = false) String city) {
+        String cityFilter = resolveCity(city);
+        return ResponseEntity.ok(analyticsService.getEfficiencyRanking(cityFilter));
+    }
+
+    /**
+     * Resuelve la ciudad efectiva: si el usuario es LOGISTICS, fuerza su ciudad asignada.
+     */
+    private String resolveCity(String requestedCity) {
+        var auth = org.springframework.security.core.context.SecurityContextHolder.getContext().getAuthentication();
+        if (auth != null && auth.getPrincipal() instanceof com.routeoptimizer.model.entity.User user) {
+            if (user.getRole() == com.routeoptimizer.model.enums.Role.LOGISTICS) {
+                return user.getAssignedCity();
+            }
+        }
+        return requestedCity;
     }
 
     /**

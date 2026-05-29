@@ -38,9 +38,17 @@ public class BatchController {
      */
     @GetMapping
     @Transactional(readOnly = true)
-    public ResponseEntity<?> listAll() {
+    public ResponseEntity<?> listAll(@RequestParam(required = false) String city) {
         try {
-            List<Map<String, Object>> safeBatches = batchService.findAll().stream()
+            String cityFilter = city;
+            var auth = org.springframework.security.core.context.SecurityContextHolder.getContext().getAuthentication();
+            if (auth != null && auth.getPrincipal() instanceof com.routeoptimizer.model.entity.User user) {
+                if (user.getRole() == com.routeoptimizer.model.enums.Role.LOGISTICS) {
+                    cityFilter = user.getAssignedCity();
+                }
+            }
+
+            List<Map<String, Object>> safeBatches = batchService.findAll(cityFilter).stream()
                     .map(batchService::convertToSafeMap)
                     .collect(Collectors.toList());
             return ResponseEntity.ok(safeBatches);

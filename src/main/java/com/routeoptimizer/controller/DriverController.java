@@ -34,16 +34,18 @@ public class DriverController {
   }
 
   @GetMapping
-  public ResponseEntity<List<DriverResponseDTO>> listAll() {
-    List<DriverResponseDTO> drivers = driverService.findAll().stream()
+  public ResponseEntity<List<DriverResponseDTO>> listAll(@RequestParam(required = false) String city) {
+    String cityFilter = resolveCity(city);
+    List<DriverResponseDTO> drivers = driverService.findAll(cityFilter).stream()
         .map(DriverResponseDTO::fromEntity)
         .collect(Collectors.toList());
     return ResponseEntity.ok(drivers);
   }
 
   @GetMapping("/available")
-  public ResponseEntity<List<DriverResponseDTO>> listAvailable() {
-    List<DriverResponseDTO> available = driverService.findAvailable().stream()
+  public ResponseEntity<List<DriverResponseDTO>> listAvailable(@RequestParam(required = false) String city) {
+    String cityFilter = resolveCity(city);
+    List<DriverResponseDTO> available = driverService.findAvailable(cityFilter).stream()
         .map(DriverResponseDTO::fromEntity)
         .collect(Collectors.toList());
     return ResponseEntity.ok(available);
@@ -77,8 +79,19 @@ public class DriverController {
   }
 
   @GetMapping("/fleet-status")
-  public ResponseEntity<List<DriverResponseDTO>> getFleetStatus() {
-    return ResponseEntity.ok(driverService.getFleetStatus());
+  public ResponseEntity<List<DriverResponseDTO>> getFleetStatus(@RequestParam(required = false) String city) {
+    String cityFilter = resolveCity(city);
+    return ResponseEntity.ok(driverService.getFleetStatus(cityFilter));
+  }
+
+  private String resolveCity(String requestedCity) {
+    var auth = org.springframework.security.core.context.SecurityContextHolder.getContext().getAuthentication();
+    if (auth != null && auth.getPrincipal() instanceof com.routeoptimizer.model.entity.User user) {
+      if (user.getRole() == com.routeoptimizer.model.enums.Role.LOGISTICS) {
+        return user.getAssignedCity();
+      }
+    }
+    return requestedCity;
   }
 
   @GetMapping("/debug-all")

@@ -19,4 +19,6 @@ public interface DriverRepository extends JpaRepository<Driver, Long> {
   
   // Buscar por ciudad asignada (case-insensitive)
   List<Driver> findByAssignedCityIgnoreCase(String city);
+
+  List<Driver> findByStatusAndAssignedCityIgnoreCase(DriverStatus status, String city);
 }

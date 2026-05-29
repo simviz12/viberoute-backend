@@ -46,8 +46,12 @@ public class ReportController {
     }
 
     @GetMapping("/generate-word")
-    public ResponseEntity<byte[]> generateOrdersReportWord(@RequestParam(required = false) String city) {
-        byte[] wordBytes = reportService.generateOrdersReportWord(city);
+    public ResponseEntity<byte[]> generateOrdersReportWord(
+            @RequestParam(required = false) String city,
+            @RequestParam(required = false) String status,
+            @RequestParam(required = false) String driver,
+            @RequestParam(required = false) String search) {
+        byte[] wordBytes = reportService.generateOrdersReportWord(city, status, driver, search);
         
         String filename = (city != null && !city.trim().isEmpty() && !city.equalsIgnoreCase("undefined")) 
             ? "Lista_Pedidos_" + city.trim() + ".docx" 
@@ -60,8 +64,12 @@ public class ReportController {
     }
 
     @GetMapping("/generate-excel")
-    public ResponseEntity<byte[]> generateOrdersReportExcel(@RequestParam(required = false) String city) {
-        byte[] excelBytes = reportService.generateOrdersReportExcel(city);
+    public ResponseEntity<byte[]> generateOrdersReportExcel(
+            @RequestParam(required = false) String city,
+            @RequestParam(required = false) String status,
+            @RequestParam(required = false) String driver,
+            @RequestParam(required = false) String search) {
+        byte[] excelBytes = reportService.generateOrdersReportExcel(city, status, driver, search);
         
         // Eliminamos el fallback global para el logístico. 
         // Si no hay ciudad, el nombre será genérico, pero el contenido ya está filtrado en el service.
