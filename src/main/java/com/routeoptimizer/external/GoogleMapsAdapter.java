@@ -20,6 +20,7 @@ import java.util.List;
  * Handles professional geocoding for Colombia with local nomenclature cleaning.
  */
 @Service
+@org.springframework.boot.autoconfigure.condition.ConditionalOnProperty(name = "viberoute.map.provider", havingValue = "google")
 public class GoogleMapsAdapter implements MapService {
 
   private static final Logger log = LoggerFactory.getLogger(GoogleMapsAdapter.class);
