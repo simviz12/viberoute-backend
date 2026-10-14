@@ -5,7 +5,7 @@ import time
 import urllib.parse
 import base64
 
-BASE_URL = "http://localhost:8080/api/v1"
+BASE_URL = "http://127.0.0.1:8080/api/v1"
 
 class Colors:
     GREEN = '\033[92m'
@@ -56,7 +56,7 @@ def run_tests():
     
     # 1.1 Registrar SUPER ADMIN
     # Password encoded as Base64 to simulate frontend "hiding"
-    password_b64 = base64.b64encode("pass".encode()).decode()
+    password_b64 = base64.b64encode("VibeRoute2026!".encode()).decode()
     superadmin_data = {"email": "superadmin@viberoute.com", "password": password_b64, "name": "Super Admin", "phone": "123", "role": "ADMIN"}
     # Ignoramos si ya existe, el login nos dará el token
     make_request("POST", "/auth/register", superadmin_data)
@@ -68,7 +68,7 @@ def run_tests():
 
     # 1.2 Registrar LOGISTICS
     logistics_data = {"email": "logistics@viberoute.com", "password": password_b64, "name": "Logistics Prueba", "phone": "123", "role": "LOGISTICS"}
-    make_request("POST", "/auth/register", logistics_data)
+    make_request("POST", "/auth/register", logistics_data, token=token_superadmin)
     
     st, res = make_request("POST", "/auth/login", {"email": "logistics@viberoute.com", "password": password_b64})
     if not print_result("Login Logistics", st, [200]): return
@@ -76,7 +76,7 @@ def run_tests():
 
     # 1.3 Registrar Driver
     driver_data = {"email": "driver@viberoute.com", "password": password_b64, "name": "Driver Prueba", "phone": "123", "role": "DRIVER", "costPerHour": 25.50}
-    make_request("POST", "/auth/register", driver_data)
+    make_request("POST", "/auth/register", driver_data, token=token_superadmin)
     
     st, res = make_request("POST", "/auth/login", {"email": "driver@viberoute.com", "password": password_b64})
     if not print_result("Login Driver", st, [200]): return
