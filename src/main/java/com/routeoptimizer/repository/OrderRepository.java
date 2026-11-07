@@ -22,6 +22,10 @@ public interface OrderRepository extends JpaRepository<Order, Long> {
 
     List<Order> findByStatus(OrderStatus status);
 
+    List<Order> findByRouteIdOrderByDeliveryOrderAsc(Long routeId);
+
+    List<Order> findByBatchIdOrderByDeliveryOrderAsc(Long batchId);
+
     Optional<Order> findByUuid(UUID uuid);
 
     @Lock(LockModeType.PESSIMISTIC_WRITE)

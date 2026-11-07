@@ -86,6 +86,10 @@ public class SecurityConfig {
             .requestMatchers("/api/v1/system/**", "/system/**")
                 .hasRole("SUPER_ADMIN")
             
+            // ── Smartwatch Standalone (Wear OS) ──────────────────────────────
+            .requestMatchers("/api/wearable/**", "/wearable/**")
+                .hasAnyRole("DRIVER", "ADMIN", "SUPER_ADMIN")
+
             // ── Acciones específicas del DRIVER ─────────────────────────────
             .requestMatchers(HttpMethod.PATCH, "/api/v1/drivers/*/status", "/drivers/*/status")
                 .hasAnyRole("DRIVER", "ADMIN", "SUPER_ADMIN")

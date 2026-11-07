@@ -11,6 +11,14 @@ import java.util.HashMap;
 @ControllerAdvice
 public class GlobalExceptionHandler {
 
+    @ExceptionHandler(RouteNotFoundException.class)
+    public ResponseEntity<Map<String, String>> handleRouteNotFoundException(RouteNotFoundException ex) {
+        Map<String, String> error = new HashMap<>();
+        error.put("error", "Route Not Found");
+        error.put("message", ex.getMessage());
+        return new ResponseEntity<>(error, HttpStatus.NOT_FOUND);
+    }
+
     @ExceptionHandler(ResourceNotFoundException.class)
     public ResponseEntity<Map<String, String>> handleResourceNotFoundException(ResourceNotFoundException ex) {
         Map<String, String> error = new HashMap<>();

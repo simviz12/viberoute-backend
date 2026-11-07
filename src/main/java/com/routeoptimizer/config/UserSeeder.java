@@ -31,10 +31,10 @@ public class UserSeeder implements CommandLineRunner {
         this.jdbcTemplate = jdbcTemplate;
     }
 
-    @Value("${ADMIN_EMAIL}")
+    @Value("${ADMIN_EMAIL:superadmin@viberoute.com}")
     private String adminEmail;
 
-    @Value("${ADMIN_PASSWORD}")
+    @Value("${ADMIN_PASSWORD:VibeRoute2026!}")
     private String adminPassword;
 
     @Override
