@@ -1,0 +1,282 @@
+[
+  {
+    "clientName": "Farmacia Pasteur Plaza Nariño",
+    "clientReference": "ORD-PST-001",
+    "address": "Calle 19 # 24-32",
+    "city": "Pasto",
+    "location": {
+      "lat": 1.2146,
+      "lng": -77.2783
+    },
+    "priority": "HIGH",
+    "price": 35000.00,
+    "timeWindowStart": "08:00:00",
+    "timeWindowEnd": "11:30:00"
+  },
+  {
+    "clientName": "Café Nariño Gourmet",
+    "clientReference": "ORD-PST-002",
+    "address": "Calle 18 # 25-14",
+    "city": "Pasto",
+    "location": {
+      "lat": 1.2138,
+      "lng": -77.2792
+    },
+    "priority": "MEDIUM",
+    "price": 28000.00,
+    "timeWindowStart": "09:00:00",
+    "timeWindowEnd": "12:00:00"
+  },
+  {
+    "clientName": "Droguería La Rebaja Maridíaz",
+    "clientReference": "ORD-PST-003",
+    "address": "Calle 11 # 34-78, Maridíaz",
+    "city": "Pasto",
+    "location": {
+      "lat": 1.2215,
+      "lng": -77.2894
+    },
+    "priority": "HIGH",
+    "price": 42000.00,
+    "timeWindowStart": "08:30:00",
+    "timeWindowEnd": "12:30:00"
+  },
+  {
+    "clientName": "Supermercado Éxito Unicentro",
+    "clientReference": "ORD-PST-004",
+    "address": "Avenida Panamericana # 11-20, Maridíaz",
+    "city": "Pasto",
+    "location": {
+      "lat": 1.2228,
+      "lng": -77.2910
+    },
+    "priority": "HIGH",
+    "price": 85000.00,
+    "timeWindowStart": "10:00:00",
+    "timeWindowEnd": "14:00:00"
+  },
+  {
+    "clientName": "Distribuidora del Sur Torobajo",
+    "clientReference": "ORD-PST-005",
+    "address": "Calle 18 # 50-02, Torobajo",
+    "city": "Pasto",
+    "location": {
+      "lat": 1.2312,
+      "lng": -77.2941
+    },
+    "priority": "MEDIUM",
+    "price": 65000.00,
+    "timeWindowStart": "09:30:00",
+    "timeWindowEnd": "15:00:00"
+  },
+  {
+    "clientName": "Papelería Universitaria Udenar",
+    "clientReference": "ORD-PST-006",
+    "address": "Carrera 45 # 20-15, Torobajo",
+    "city": "Pasto",
+    "location": {
+      "lat": 1.2298,
+      "lng": -77.2952
+    },
+    "priority": "LOW",
+    "price": 18500.00,
+    "timeWindowStart": "11:00:00",
+    "timeWindowEnd": "16:30:00"
+  },
+  {
+    "clientName": "Suministros Médicos Hospital Nariño",
+    "clientReference": "ORD-PST-007",
+    "address": "Calle 22 # 7-93, Bolívar",
+    "city": "Pasto",
+    "location": {
+      "lat": 1.2185,
+      "lng": -77.2721
+    },
+    "priority": "HIGH",
+    "price": 120000.00,
+    "timeWindowStart": "08:00:00",
+    "timeWindowEnd": "11:00:00"
+  },
+  {
+    "clientName": "Tienda de Mascotas Parque Infantil",
+    "clientReference": "ORD-PST-008",
+    "address": "Carrera 29 # 10-15, San Juan Bosco",
+    "city": "Pasto",
+    "location": {
+      "lat": 1.2162,
+      "lng": -77.2835
+    },
+    "priority": "LOW",
+    "price": 22000.00,
+    "timeWindowStart": "13:00:00",
+    "timeWindowEnd": "17:30:00"
+  },
+  {
+    "clientName": "Comercializadora El Potrerillo",
+    "clientReference": "ORD-PST-009",
+    "address": "Carrera 5 # 14-50, El Potrerillo",
+    "city": "Pasto",
+    "location": {
+      "lat": 1.2035,
+      "lng": -77.2762
+    },
+    "priority": "HIGH",
+    "price": 95000.00,
+    "timeWindowStart": "07:30:00",
+    "timeWindowEnd": "11:00:00"
+  },
+  {
+    "clientName": "Óptica Visión Palermo",
+    "clientReference": "ORD-PST-010",
+    "address": "Calle 20 # 37-15, Palermo",
+    "city": "Pasto",
+    "location": {
+      "lat": 1.2248,
+      "lng": -77.2912
+    },
+    "priority": "MEDIUM",
+    "price": 48000.00,
+    "timeWindowStart": "10:30:00",
+    "timeWindowEnd": "16:00:00"
+  },
+  {
+    "clientName": "Restaurante Mister Pollo Santiago",
+    "clientReference": "ORD-PST-011",
+    "address": "Carrera 23 # 12-45, Santiago",
+    "city": "Pasto",
+    "location": {
+      "lat": 1.2091,
+      "lng": -77.2754
+    },
+    "priority": "HIGH",
+    "price": 53000.00,
+    "timeWindowStart": "12:00:00",
+    "timeWindowEnd": "15:00:00"
+  },
+  {
+    "clientName": "Ferretería La Construcción Lorenzo",
+    "clientReference": "ORD-PST-012",
+    "address": "Calle 14 # 4-30, Lorenzo de Aldana",
+    "city": "Pasto",
+    "location": {
+      "lat": 1.2062,
+      "lng": -77.2689
+    },
+    "priority": "MEDIUM",
+    "price": 74000.00,
+    "timeWindowStart": "08:30:00",
+    "timeWindowEnd": "13:30:00"
+  },
+  {
+    "clientName": "Almacén Alkosto Bolívar",
+    "clientReference": "ORD-PST-013",
+    "address": "Carrera 22B # 19-35, Bolívar",
+    "city": "Pasto",
+    "location": {
+      "lat": 1.2115,
+      "lng": -77.2738
+    },
+    "priority": "HIGH",
+    "price": 110000.00,
+    "timeWindowStart": "09:00:00",
+    "timeWindowEnd": "14:00:00"
+  },
+  {
+    "clientName": "Laboratorio Clínico Clínica Pasto",
+    "clientReference": "ORD-PST-014",
+    "address": "Carrera 33 # 12-40, Las Acacias",
+    "city": "Pasto",
+    "location": {
+      "lat": 1.2198,
+      "lng": -77.2865
+    },
+    "priority": "HIGH",
+    "price": 39000.00,
+    "timeWindowStart": "08:00:00",
+    "timeWindowEnd": "12:00:00"
+  },
+  {
+    "clientName": "Mini Market Tamasagra",
+    "clientReference": "ORD-PST-015",
+    "address": "Manzana 14 Casa 8, Tamasagra",
+    "city": "Pasto",
+    "location": {
+      "lat": 1.2085,
+      "lng": -77.2915
+    },
+    "priority": "LOW",
+    "price": 26500.00,
+    "timeWindowStart": "14:00:00",
+    "timeWindowEnd": "18:00:00"
+  },
+  {
+    "clientName": "Logística Envíos Terminal",
+    "clientReference": "ORD-PST-016",
+    "address": "Carrera 6 # 16-80, La Magdalena",
+    "city": "Pasto",
+    "location": {
+      "lat": 1.2078,
+      "lng": -77.2665
+    },
+    "priority": "HIGH",
+    "price": 68000.00,
+    "timeWindowStart": "08:00:00",
+    "timeWindowEnd": "13:00:00"
+  },
+  {
+    "clientName": "Panadería y Pastelería Pandiaco",
+    "clientReference": "ORD-PST-017",
+    "address": "Carrera 42 # 19B-20, Pandiaco",
+    "city": "Pasto",
+    "location": {
+      "lat": 1.2285,
+      "lng": -77.2980
+    },
+    "priority": "MEDIUM",
+    "price": 31000.00,
+    "timeWindowStart": "10:00:00",
+    "timeWindowEnd": "16:00:00"
+  },
+  {
+    "clientName": "Boutique Aurora Bella",
+    "clientReference": "ORD-PST-018",
+    "address": "Calle 15 # 33-10, La Aurora",
+    "city": "Pasto",
+    "location": {
+      "lat": 1.2220,
+      "lng": -77.2845
+    },
+    "priority": "LOW",
+    "price": 45000.00,
+    "timeWindowStart": "11:30:00",
+    "timeWindowEnd": "17:00:00"
+  },
+  {
+    "clientName": "Floristería y Regalos Mijitayo",
+    "clientReference": "ORD-PST-019",
+    "address": "Carrera 28A # 5-60, Mijitayo",
+    "city": "Pasto",
+    "location": {
+      "lat": 1.2065,
+      "lng": -77.2820
+    },
+    "priority": "MEDIUM",
+    "price": 37000.00,
+    "timeWindowStart": "09:00:00",
+    "timeWindowEnd": "15:30:00"
+  },
+  {
+    "clientName": "Centro Comercial Bomboná Local 104",
+    "clientReference": "ORD-PST-020",
+    "address": "Carrera 27 # 16-55",
+    "city": "Pasto",
+    "location": {
+      "lat": 1.2118,
+      "lng": -77.2788
+    },
+    "priority": "HIGH",
+    "price": 59000.00,
+    "timeWindowStart": "10:30:00",
+    "timeWindowEnd": "15:00:00"
+  }
+]
