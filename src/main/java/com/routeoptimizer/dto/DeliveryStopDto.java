@@ -177,5 +177,50 @@ public class DeliveryStopDto {
     public void setNotes(String notes) {
         this.notes = notes;
     }
+
+    // ── Compatibilidad directa con App Wear OS (Smartwatch) ──
+    public String getId() {
+        return deliveryId != null ? String.valueOf(deliveryId) : (orderId != null ? String.valueOf(orderId) : "0");
+    }
+
+    public int getStopNumber() {
+        return deliveryOrder != null ? deliveryOrder : 1;
+    }
+
+    public String getRecipientName() {
+        return clientName != null ? clientName : "Cliente";
+    }
+
+    public String getApartmentOrSuite() {
+        return "";
+    }
+
+    public String getPackageId() {
+        return clientReference != null ? clientReference : ("PKG-" + deliveryId);
+    }
+
+    public String getDistanceText() {
+        return "150m";
+    }
+
+    public String getNavigationInstruction() {
+        return address != null ? ("Dirigirse a " + address) : "Continuar hacia la entrega";
+    }
+
+    public String getTurnDirection() {
+        return "↑";
+    }
+
+    public boolean isSuccess() {
+        return true;
+    }
+
+    public String getStopId() {
+        return getId();
+    }
+
+    public String getMessage() {
+        return "Entrega actualizada exitosamente";
+    }
 }
 

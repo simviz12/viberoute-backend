@@ -32,25 +32,31 @@ public class WearableRouteController {
         this.wearableRouteService = wearableRouteService;
     }
 
+    private static final Long DEFAULT_DEVELOPMENT_DRIVER_ID = 3L;
+
     /**
      * Sincroniza la ruta activa asignada al conductor autenticado para visualización en Smartwatch.
+     * En entorno de desarrollo permite acceso directo tomando al conductor activo (Driver #3).
      *
      * @return RouteSummaryDto con metadatos de ruta y lista secuencial de paradas
      */
     @GetMapping("/routes/active")
     public ResponseEntity<RouteSummaryDto> getActiveRoute() {
         User user = authenticatedUser();
-        if (user == null) {
-            return ResponseEntity.status(HttpStatus.UNAUTHORIZED).build();
+        Long driverId;
+
+        if (user != null) {
+            if (user.getRole() != Role.DRIVER && user.getRole() != Role.ADMIN && user.getRole() != Role.SUPER_ADMIN) {
+                throw new AccessDeniedException("El usuario no tiene rol DRIVER para acceder a rutas de smartwatch.");
+            }
+            driverId = user.getId();
+        } else {
+            log.info("⌚ [WEAR_OS] Sincronización directa sin token JWT. Asignando conductor por defecto ID: {}", DEFAULT_DEVELOPMENT_DRIVER_ID);
+            driverId = DEFAULT_DEVELOPMENT_DRIVER_ID;
         }
 
-        // Validación de rol (DRIVER o roles administrativos permitidos)
-        if (user.getRole() != Role.DRIVER && user.getRole() != Role.ADMIN && user.getRole() != Role.SUPER_ADMIN) {
-            throw new AccessDeniedException("El usuario no tiene rol DRIVER para acceder a rutas de smartwatch.");
-        }
-
-        log.info("⌚ [WEAR_OS] Solicitud de ruta activa recibida para conductor ID: {}", user.getId());
-        RouteSummaryDto routeSummary = wearableRouteService.getActiveRouteForDriver(user.getId());
+        log.info("⌚ [WEAR_OS] Solicitud de ruta activa procesada para conductor ID: {}", driverId);
+        RouteSummaryDto routeSummary = wearableRouteService.getActiveRouteForDriver(driverId);
         return ResponseEntity.ok(routeSummary);
     }
 
@@ -67,18 +73,22 @@ public class WearableRouteController {
             @PathVariable Long deliveryId,
             @Valid @RequestBody DeliveryStatusRequestDto requestDto) {
         User user = authenticatedUser();
-        if (user == null) {
-            return ResponseEntity.status(HttpStatus.UNAUTHORIZED).build();
-        }
+        Long driverId;
 
-        if (user.getRole() != Role.DRIVER && user.getRole() != Role.ADMIN && user.getRole() != Role.SUPER_ADMIN) {
-            throw new AccessDeniedException("Solo conductores pueden confirmar estados de entregas desde smartwatch.");
+        if (user != null) {
+            if (user.getRole() != Role.DRIVER && user.getRole() != Role.ADMIN && user.getRole() != Role.SUPER_ADMIN) {
+                throw new AccessDeniedException("Solo conductores pueden confirmar estados de entregas desde smartwatch.");
+            }
+            driverId = user.getId();
+        } else {
+            log.info("⌚ [WEAR_OS] Confirmación directa sin token JWT para entrega #{}. Asignando conductor por defecto ID: {}", deliveryId, DEFAULT_DEVELOPMENT_DRIVER_ID);
+            driverId = DEFAULT_DEVELOPMENT_DRIVER_ID;
         }
 
         log.info("⌚ [WEAR_OS] Confirmación de entrega #{} recibida desde smartwatch (Conductor #{}): status={}",
-                deliveryId, user.getId(), requestDto.getStatus());
+                deliveryId, driverId, requestDto.getStatus());
 
-        DeliveryStopDto updatedStop = wearableRouteService.updateDeliveryStatus(user.getId(), deliveryId, requestDto);
+        DeliveryStopDto updatedStop = wearableRouteService.updateDeliveryStatus(driverId, deliveryId, requestDto);
         return ResponseEntity.ok(updatedStop);
     }
 

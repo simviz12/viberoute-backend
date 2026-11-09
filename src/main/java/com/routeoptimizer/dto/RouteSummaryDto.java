@@ -129,5 +129,22 @@ public class RouteSummaryDto {
     public void setStops(List<DeliveryStopDto> stops) {
         this.stops = stops != null ? stops : new ArrayList<>();
     }
+
+    // ── Compatibilidad directa con App Wear OS (Smartwatch) ──
+    public String getId() {
+        return routeId != null ? String.valueOf(routeId) : (batchId != null ? String.valueOf(batchId) : "1");
+    }
+
+    public String getRouteName() {
+        return "Ruta Bogotá - " + (city != null ? city : "Centro");
+    }
+
+    public String getVehicleType() {
+        return "MOTO";
+    }
+
+    public double getTotalDistanceKm() {
+        return Math.round((totalDistanceMeters / 1000.0) * 10.0) / 10.0;
+    }
 }
 
