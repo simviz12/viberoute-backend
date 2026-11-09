@@ -32,7 +32,7 @@ public class Route {
   @Column(name = "creation_date")
   private LocalDateTime creationDate;
 
-  @Column(name = "encoded_polyline", length = 5000)
+  @Column(name = "encoded_polyline", columnDefinition = "TEXT")
   private String encodedPolyline;
 
   @OneToMany(fetch = FetchType.EAGER)
